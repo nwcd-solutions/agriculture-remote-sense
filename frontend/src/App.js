@@ -12,7 +12,23 @@ const { Header, Content, Sider } = Layout;
 
 // 配置 API 基础 URL
 const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+const API_KEY = process.env.REACT_APP_API_KEY || '';
+
+// 配置 axios 默认值
 axios.defaults.baseURL = API_BASE_URL;
+
+// 添加请求拦截器，自动添加 API Key
+axios.interceptors.request.use(
+  (config) => {
+    if (API_KEY) {
+      config.headers['X-Api-Key'] = API_KEY;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 function App() {
   const [aoi, setAoi] = useState(null);

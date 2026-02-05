@@ -77,6 +77,7 @@ const frontendStack = new FrontendStack(app, `SatelliteGis-Frontend-${config.env
   description: `Frontend infrastructure for Satellite GIS Platform (${config.environment})`,
   stackName: `SatelliteGis-Frontend-${config.environment}`,
   apiUrl: apiStack.apiUrl,
+  apiKeyId: apiStack.apiKey.keyId,
 });
 
 // Create Monitoring Stack (skip for now - Lambda doesn't have ECS service)
