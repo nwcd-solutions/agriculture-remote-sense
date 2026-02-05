@@ -5,7 +5,7 @@ import { NetworkStack } from '../lib/stacks/network-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { DatabaseStack } from '../lib/stacks/database-stack';
 import { BatchStack } from '../lib/stacks/batch-stack';
-import { ApiStack } from '../lib/stacks/api-stack';
+import { LambdaApiStack } from '../lib/stacks/lambda-api-stack';
 import { FrontendStack } from '../lib/stacks/frontend-stack';
 import { MonitoringStack } from '../lib/stacks/monitoring-stack';
 import { getConfig } from '../lib/config';
@@ -58,14 +58,12 @@ const batchStack = new BatchStack(app, `SatelliteGis-Batch-${config.environment}
   tasksTable: databaseStack.tasksTable,
 });
 
-// Create API Stack - builds container from source
-const apiStack = new ApiStack(app, `SatelliteGis-Api-${config.environment}`, {
+// Create Lambda API Stack
+const apiStack = new LambdaApiStack(app, `SatelliteGis-Api-${config.environment}`, {
   env,
   config,
-  description: `API service infrastructure for Satellite GIS Platform (${config.environment})`,
+  description: `Lambda API service for Satellite GIS Platform (${config.environment})`,
   stackName: `SatelliteGis-Api-${config.environment}`,
-  vpc: networkStack.vpc,
-  securityGroup: networkStack.apiSecurityGroup,
   tasksTable: databaseStack.tasksTable,
   resultsBucket: storageStack.resultsBucket,
   batchJobQueue: batchStack.jobQueue,
@@ -81,16 +79,15 @@ const frontendStack = new FrontendStack(app, `SatelliteGis-Frontend-${config.env
   apiUrl: apiStack.apiUrl,
 });
 
-// Create Monitoring Stack
-const monitoringStack = new MonitoringStack(app, `SatelliteGis-Monitoring-${config.environment}`, {
-  env,
-  config,
-  description: `Monitoring infrastructure for Satellite GIS Platform (${config.environment})`,
-  stackName: `SatelliteGis-Monitoring-${config.environment}`,
-  apiService: apiStack.service,
-  batchJobQueue: batchStack.jobQueue,
-  tasksTable: databaseStack.tasksTable,
-});
+// Create Monitoring Stack (skip for now - Lambda doesn't have ECS service)
+// const monitoringStack = new MonitoringStack(app, `SatelliteGis-Monitoring-${config.environment}`, {
+//   env,
+//   config,
+//   description: `Monitoring infrastructure for Satellite GIS Platform (${config.environment})`,
+//   stackName: `SatelliteGis-Monitoring-${config.environment}`,
+//   batchJobQueue: batchStack.jobQueue,
+//   tasksTable: databaseStack.tasksTable,
+// });
 
 // Apply tags to all stacks
 Object.entries(config.tags).forEach(([key, value]) => {

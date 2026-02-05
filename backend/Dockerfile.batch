@@ -1,7 +1,7 @@
 # Dockerfile for AWS Batch Processing Container
 # This container runs satellite data processing tasks including vegetation index calculation
 
-FROM osgeo/gdal:ubuntu-small-3.8.0
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.8.0
 
 # Set working directory
 WORKDIR /app

@@ -1,0 +1,11 @@
+# Web Framework (minimal)
+fastapi==0.104.1
+pydantic>=2.10.0
+mangum==0.17.0
+
+# STAC Client (for satellite data query)
+pystac-client==0.7.5
+httpx==0.25.2
+
+# AWS SDK (for DynamoDB, S3, Batch)
+boto3==1.34.0

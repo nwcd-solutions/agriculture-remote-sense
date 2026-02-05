@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ConfigProvider, message, Layout } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import axios from 'axios';
@@ -9,6 +9,10 @@ import ProcessingConfigPanel from './components/ProcessingConfigPanel';
 import './App.css';
 
 const { Header, Content, Sider } = Layout;
+
+// 配置 API 基础 URL
+const API_BASE_URL = process.env.REACT_APP_API_URL || '';
+axios.defaults.baseURL = API_BASE_URL;
 
 function App() {
   const [aoi, setAoi] = useState(null);
@@ -62,6 +66,59 @@ function App() {
     setSelectedImage(image);
     message.info(`已选择影像: ${image.id}`);
   }, []);
+
+  // 轮询任务状态
+  const pollTaskStatus = useCallback(async (taskId) => {
+    try {
+      const response = await axios.get(`/api/process/tasks/${taskId}`);
+      const task = response.data;
+      
+      setProcessingTask(task);
+      
+      // 如果任务完成或失败，停止轮询
+      if (task.status === 'completed' || task.status === 'failed') {
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          setPollingInterval(null);
+        }
+        
+        if (task.status === 'completed') {
+          message.success('处理完成！');
+        } else {
+          message.error('处理失败');
+        }
+      }
+    } catch (error) {
+      console.error('查询任务状态失败:', error);
+      // 不显示错误消息，避免频繁提示
+    }
+  }, [pollingInterval]);
+
+  // 启动轮询
+  const startPolling = useCallback((taskId) => {
+    // 清除现有的轮询
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+    }
+    
+    // 立即查询一次
+    pollTaskStatus(taskId);
+    
+    // 设置定时轮询（每 5 秒）
+    const interval = setInterval(() => {
+      pollTaskStatus(taskId);
+    }, 5000);
+    
+    setPollingInterval(interval);
+  }, [pollingInterval, pollTaskStatus]);
+
+  // 停止轮询
+  const stopPolling = useCallback(() => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  }, [pollingInterval]);
 
   // 处理植被指数计算
   const handleProcess = useCallback(async ({ image, indices }) => {
@@ -167,59 +224,6 @@ function App() {
       setProcessingLoading(false);
     }
   }, [aoi, startPolling]);
-
-  // 轮询任务状态
-  const pollTaskStatus = useCallback(async (taskId) => {
-    try {
-      const response = await axios.get(`/api/process/tasks/${taskId}`);
-      const task = response.data;
-      
-      setProcessingTask(task);
-      
-      // 如果任务完成或失败，停止轮询
-      if (task.status === 'completed' || task.status === 'failed') {
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-        }
-        
-        if (task.status === 'completed') {
-          message.success('处理完成！');
-        } else {
-          message.error('处理失败');
-        }
-      }
-    } catch (error) {
-      console.error('查询任务状态失败:', error);
-      // 不显示错误消息，避免频繁提示
-    }
-  }, [pollingInterval]);
-
-  // 启动轮询
-  const startPolling = useCallback((taskId) => {
-    // 清除现有的轮询
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-    }
-    
-    // 立即查询一次
-    pollTaskStatus(taskId);
-    
-    // 设置定时轮询（每 5 秒）
-    const interval = setInterval(() => {
-      pollTaskStatus(taskId);
-    }, 5000);
-    
-    setPollingInterval(interval);
-  }, [pollingInterval, pollTaskStatus]);
-
-  // 停止轮询
-  const stopPolling = useCallback(() => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
-    }
-  }, [pollingInterval]);
 
   // 组件卸载时清理轮询
   useEffect(() => {

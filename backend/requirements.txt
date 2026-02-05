@@ -3,6 +3,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic>=2.10.0
 python-multipart==0.0.6
+mangum==0.17.0  # AWS Lambda adapter for FastAPI
 
 # STAC and Satellite Data
 pystac-client==0.7.5

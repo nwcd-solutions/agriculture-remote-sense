@@ -2,9 +2,15 @@
 卫星 GIS 平台 - FastAPI 后端主应用
 """
 import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import aoi, query, process
+# from app.api import aoi  # Disabled for Lambda (not used by frontend)
+from app.api import query, process
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # 创建 FastAPI 应用实例
 app = FastAPI(
@@ -16,19 +22,24 @@ app = FastAPI(
 # 从环境变量读取 CORS 配置
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000")
 # 支持逗号分隔的多个源
-origins_list = [origin.strip() for origin in cors_origins.split(",")]
+if cors_origins == "*":
+    origins_list = ["*"]
+else:
+    origins_list = [origin.strip() for origin in cors_origins.split(",")]
+
+logger.info(f"CORS Origins configured: {origins_list}")
 
 # 配置 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins_list,
-    allow_credentials=True,
+    allow_credentials=True if origins_list != ["*"] else False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # 注册路由
-app.include_router(aoi.router)
+# app.include_router(aoi.router)  # Disabled for Lambda
 app.include_router(query.router)
 app.include_router(process.router)
 

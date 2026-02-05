@@ -1,8 +1,9 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
-import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
+import * as apigatewayv2_integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -24,7 +25,9 @@ export interface ApiStackProps extends cdk.StackProps {
 export class ApiStack extends cdk.Stack {
   public readonly service: ecs.FargateService;
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
+  public readonly httpApi: apigatewayv2.HttpApi;
   public readonly apiUrl: string;
+  public readonly apiGatewayUrl: string;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
@@ -132,6 +135,7 @@ export class ApiStack extends cdk.Stack {
         BATCH_JOB_DEFINITION: batchJobDefinition.jobDefinitionName,
         PYTHONUNBUFFERED: '1',
         LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
+        CORS_ORIGINS: 'http://localhost:3000,https://dev.dfjse3jyewuby.amplifyapp.com,https://main.dfjse3jyewuby.amplifyapp.com',
       },
       healthCheck: {
         command: ['CMD-SHELL', 'curl -f http://localhost:8000/health || exit 1'],
@@ -174,7 +178,7 @@ export class ApiStack extends cdk.Stack {
     });
 
     // Add HTTP listener
-    this.loadBalancer.addListener('HttpListener', {
+    const httpListener = this.loadBalancer.addListener('HttpListener', {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
       defaultTargetGroups: [targetGroup],
@@ -262,6 +266,76 @@ export class ApiStack extends cdk.Stack {
       value: logGroup.logGroupName,
       description: 'CloudWatch log group name',
       exportName: `SatelliteGis-ApiLogGroup-${config.environment}`,
+    });
+
+    // Create VPC Link for API Gateway
+    const vpcLink = new apigatewayv2.VpcLink(this, 'VpcLink', {
+      vpc,
+      vpcLinkName: `satellite-gis-vpclink-${config.environment}`,
+      subnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      securityGroups: [securityGroup],
+    });
+
+    // Create HTTP API Gateway
+    this.httpApi = new apigatewayv2.HttpApi(this, 'HttpApi', {
+      apiName: `satellite-gis-api-${config.environment}`,
+      description: 'Satellite GIS API Gateway',
+      corsPreflight: {
+        allowOrigins: [
+          'http://localhost:3000',
+          'https://dev.dfjse3jyewuby.amplifyapp.com',
+          'https://main.dfjse3jyewuby.amplifyapp.com',
+        ],
+        allowMethods: [
+          apigatewayv2.CorsHttpMethod.GET,
+          apigatewayv2.CorsHttpMethod.POST,
+          apigatewayv2.CorsHttpMethod.PUT,
+          apigatewayv2.CorsHttpMethod.DELETE,
+          apigatewayv2.CorsHttpMethod.OPTIONS,
+        ],
+        allowHeaders: ['*'],
+        allowCredentials: false,
+      },
+    });
+
+    // Create HTTP integration with ALB via VPC Link
+    const albIntegration = new apigatewayv2_integrations.HttpAlbIntegration(
+      'AlbIntegration',
+      httpListener,
+      {
+        vpcLink,
+      }
+    );
+
+    // Add catch-all route
+    this.httpApi.addRoutes({
+      path: '/{proxy+}',
+      methods: [apigatewayv2.HttpMethod.ANY],
+      integration: albIntegration,
+    });
+
+    // Add root route
+    this.httpApi.addRoutes({
+      path: '/',
+      methods: [apigatewayv2.HttpMethod.ANY],
+      integration: albIntegration,
+    });
+
+    // Set API Gateway URL
+    this.apiGatewayUrl = this.httpApi.apiEndpoint;
+
+    new cdk.CfnOutput(this, 'ApiGatewayUrl', {
+      value: this.apiGatewayUrl,
+      description: 'API Gateway HTTPS URL',
+      exportName: `SatelliteGis-ApiGatewayUrl-${config.environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'VpcLinkId', {
+      value: vpcLink.vpcLinkId,
+      description: 'VPC Link ID',
+      exportName: `SatelliteGis-VpcLinkId-${config.environment}`,
     });
 
     // Add tags
