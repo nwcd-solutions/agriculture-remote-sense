@@ -62,9 +62,9 @@ export const devConfig: EnvironmentConfig = {
     certificateArn: undefined, // Optional ACM certificate ARN
     enableCloudFront: true,
     cloudFrontPriceClass: 'PriceClass_100', // US, Canada, Europe
-    branchName: 'dev', // Git branch name for Amplify
-    repositoryUrl: undefined, // Optional: GitHub/GitLab/Bitbucket repo URL
-    githubToken: undefined, // Optional: GitHub access token
+    branchName: 'main', // Git branch name for Amplify
+    repositoryUrl: 'https://github.com/nwcd-solutions/remote-sensing', // GitHub repo URL
+    githubToken: process.env.GITHUB_TOKEN, // GitHub access token (set via environment variable)
   },
   
   // Tags

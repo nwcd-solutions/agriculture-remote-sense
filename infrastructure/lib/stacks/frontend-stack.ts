@@ -35,9 +35,9 @@ export class FrontendStack extends cdk.Stack {
       name: `satellite-gis-${config.environment}`,
       description: `Satellite GIS Platform Frontend (${config.environment})`,
       
-      // Repository configuration (optional - can be connected via console)
-      // repository: config.frontend.repositoryUrl,
-      // accessToken: config.frontend.githubToken,
+      // Repository configuration - connect to GitHub
+      repository: config.frontend.repositoryUrl,
+      accessToken: config.frontend.githubToken,
       
       // IAM service role
       iamServiceRole: amplifyRole.roleArn,
