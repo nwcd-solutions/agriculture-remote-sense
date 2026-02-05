@@ -1,8 +1,8 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as apigatewayv2 from 'aws-cdk-lib/aws-apigatewayv2';
-import * as apigatewayv2_integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as batch from 'aws-cdk-lib/aws-batch';
@@ -18,13 +18,23 @@ export interface LambdaApiStackProps extends cdk.StackProps {
 }
 
 export class LambdaApiStack extends cdk.Stack {
-  public readonly httpApi: apigatewayv2.HttpApi;
+  public readonly restApi: apigateway.RestApi;
   public readonly apiUrl: string;
+  public readonly apiKey: apigateway.ApiKey;
 
   constructor(scope: Construct, id: string, props: LambdaApiStackProps) {
     super(scope, id, props);
 
     const { config, tasksTable, resultsBucket, batchJobQueue, batchJobDefinition } = props;
+
+    // Create CloudWatch log group for API Gateway
+    const apiLogGroup = new logs.LogGroup(this, 'ApiLogGroup', {
+      logGroupName: `/aws/apigateway/satellite-gis-api-${config.environment}`,
+      retention: config.monitoring.logRetentionDays,
+      removalPolicy: config.environment === 'prod'
+        ? cdk.RemovalPolicy.RETAIN
+        : cdk.RemovalPolicy.DESTROY,
+    });
 
     // Common Lambda layer with dependencies
     const dependenciesLayer = new lambda.LayerVersion(this, 'DependenciesLayer', {
@@ -82,7 +92,7 @@ export class LambdaApiStack extends cdk.Stack {
       resources: [
         batchJobQueue.jobQueueArn,
         batchJobDefinition.jobDefinitionArn,
-        `arn:aws:batch:${this.region}:${this.account}:job/*`,
+        `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job/*`,
       ],
     }));
 
@@ -96,66 +106,152 @@ export class LambdaApiStack extends cdk.Stack {
       ],
     }));
 
-    // Create HTTP API Gateway
-    this.httpApi = new apigatewayv2.HttpApi(this, 'HttpApi', {
-      apiName: `satellite-gis-api-${config.environment}`,
-      description: 'Satellite GIS API Gateway with Lambda',
-      corsPreflight: {
+    // Create REST API Gateway
+    this.restApi = new apigateway.RestApi(this, 'RestApi', {
+      restApiName: `satellite-gis-api-${config.environment}`,
+      description: 'Satellite GIS REST API Gateway with Lambda',
+      deployOptions: {
+        stageName: config.environment,
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: true,
+        accessLogDestination: new apigateway.LogGroupLogDestination(apiLogGroup),
+        accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+          caller: true,
+          httpMethod: true,
+          ip: true,
+          protocol: true,
+          requestTime: true,
+          resourcePath: true,
+          responseLength: true,
+          status: true,
+          user: true,
+        }),
+        throttlingRateLimit: 100,
+        throttlingBurstLimit: 200,
+      },
+      defaultCorsPreflightOptions: {
         allowOrigins: [
           'http://localhost:3000',
           'https://dev.dfjse3jyewuby.amplifyapp.com',
           'https://main.dfjse3jyewuby.amplifyapp.com',
         ],
-        allowMethods: [
-          apigatewayv2.CorsHttpMethod.GET,
-          apigatewayv2.CorsHttpMethod.POST,
-          apigatewayv2.CorsHttpMethod.PUT,
-          apigatewayv2.CorsHttpMethod.DELETE,
-          apigatewayv2.CorsHttpMethod.OPTIONS,
+        allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowHeaders: [
+          'Content-Type',
+          'X-Amz-Date',
+          'Authorization',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
         ],
-        allowHeaders: ['*'],
         allowCredentials: false,
+      },
+      cloudWatchRole: true,
+    });
+
+    // Create API Key
+    this.apiKey = this.restApi.addApiKey('ApiKey', {
+      apiKeyName: `satellite-gis-key-${config.environment}`,
+      description: `API Key for Satellite GIS Platform (${config.environment})`,
+    });
+
+    // Create Usage Plan with rate limiting and quota
+    const usagePlan = this.restApi.addUsagePlan('UsagePlan', {
+      name: `satellite-gis-usage-${config.environment}`,
+      description: `Usage plan for Satellite GIS Platform (${config.environment})`,
+      throttle: {
+        rateLimit: 100,  // requests per second
+        burstLimit: 200, // maximum concurrent requests
+      },
+      quota: {
+        limit: 10000,  // requests per day
+        period: apigateway.Period.DAY,
       },
     });
 
-    // Create integrations
-    const queryIntegration = new apigatewayv2_integrations.HttpLambdaIntegration(
-      'QueryIntegration',
-      queryFunction
-    );
-
-    const processIntegration = new apigatewayv2_integrations.HttpLambdaIntegration(
-      'ProcessIntegration',
-      processFunction
-    );
-
-    // Add routes
-    this.httpApi.addRoutes({
-      path: '/api/query',
-      methods: [apigatewayv2.HttpMethod.POST],
-      integration: queryIntegration,
+    // Associate API key with usage plan
+    usagePlan.addApiKey(this.apiKey);
+    usagePlan.addApiStage({
+      stage: this.restApi.deploymentStage,
     });
 
-    this.httpApi.addRoutes({
-      path: '/api/process/indices',
-      methods: [apigatewayv2.HttpMethod.POST],
-      integration: processIntegration,
+    // Create Lambda integrations
+    const queryIntegration = new apigateway.LambdaIntegration(queryFunction, {
+      proxy: true,
+      allowTestInvoke: config.environment !== 'prod',
     });
 
-    this.httpApi.addRoutes({
-      path: '/api/process/tasks/{task_id}',
-      methods: [apigatewayv2.HttpMethod.GET, apigatewayv2.HttpMethod.DELETE],
-      integration: processIntegration,
+    const processIntegration = new apigateway.LambdaIntegration(processFunction, {
+      proxy: true,
+      allowTestInvoke: config.environment !== 'prod',
+    });
+
+    // Create /api resource
+    const apiResource = this.restApi.root.addResource('api');
+
+    // Create /api/query endpoint
+    const queryResource = apiResource.addResource('query');
+    queryResource.addMethod('POST', queryIntegration, {
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'QueryRequestValidator', {
+        restApi: this.restApi,
+        requestValidatorName: 'query-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // Create /api/process resource
+    const processResource = apiResource.addResource('process');
+
+    // Create /api/process/indices endpoint
+    const indicesResource = processResource.addResource('indices');
+    indicesResource.addMethod('POST', processIntegration, {
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'IndicesRequestValidator', {
+        restApi: this.restApi,
+        requestValidatorName: 'indices-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // Create /api/process/tasks/{task_id} endpoint
+    const tasksResource = processResource.addResource('tasks');
+    const taskIdResource = tasksResource.addResource('{task_id}');
+    
+    taskIdResource.addMethod('GET', processIntegration, {
+      apiKeyRequired: true,
+      requestParameters: {
+        'method.request.path.task_id': true,
+      },
+    });
+
+    taskIdResource.addMethod('DELETE', processIntegration, {
+      apiKeyRequired: true,
+      requestParameters: {
+        'method.request.path.task_id': true,
+      },
     });
 
     // Set API URL
-    this.apiUrl = this.httpApi.apiEndpoint;
+    this.apiUrl = this.restApi.url;
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: this.apiUrl,
-      description: 'API Gateway HTTPS URL',
+      description: 'REST API Gateway URL',
       exportName: `SatelliteGis-ApiUrl-${config.environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'ApiKeyId', {
+      value: this.apiKey.keyId,
+      description: 'API Key ID',
+      exportName: `SatelliteGis-ApiKeyId-${config.environment}`,
+    });
+
+    new cdk.CfnOutput(this, 'ApiKeyArn', {
+      value: this.apiKey.keyArn,
+      description: 'API Key ARN',
     });
 
     new cdk.CfnOutput(this, 'QueryFunctionName', {
@@ -166,6 +262,11 @@ export class LambdaApiStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ProcessFunctionName', {
       value: processFunction.functionName,
       description: 'Process Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'UsagePlanId', {
+      value: usagePlan.usagePlanId,
+      description: 'API Usage Plan ID',
     });
 
     // Add tags
