@@ -20,7 +20,7 @@ export interface LambdaApiStackProps extends cdk.StackProps {
 export class LambdaApiStack extends cdk.Stack {
   public readonly restApi: apigateway.RestApi;
   public readonly apiUrl: string;
-  public readonly apiKey: apigateway.ApiKey;
+  public readonly apiKey: apigateway.IApiKey;
 
   constructor(scope: Construct, id: string, props: LambdaApiStackProps) {
     super(scope, id, props);
