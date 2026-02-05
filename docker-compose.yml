@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: satellite-gis-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - STAC_API_URL=https://earth-search.aws.element84.com/v1
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=True
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+      - ./temp:/app/temp
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - satellite-gis-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: satellite-gis-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm start
+    depends_on:
+      - backend
+    networks:
+      - satellite-gis-network
+
+networks:
+  satellite-gis-network:
+    driver: bridge

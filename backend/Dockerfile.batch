@@ -1,0 +1,47 @@
+# Dockerfile for AWS Batch Processing Container
+# This container runs satellite data processing tasks including vegetation index calculation
+
+FROM osgeo/gdal:ubuntu-small-3.8.0
+
+# Set working directory
+WORKDIR /app
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y \
+    python3-pip \
+    python3-dev \
+    build-essential \
+    libgeos-dev \
+    libproj-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install GDAL Python bindings matching system GDAL version
+RUN pip3 install --no-cache-dir GDAL==$(gdal-config --version)
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Install Python dependencies (excluding GDAL which is already installed)
+RUN grep -v "^GDAL" requirements.txt > requirements-no-gdal.txt && \
+    pip3 install --no-cache-dir -r requirements-no-gdal.txt
+
+# Copy application code
+COPY app/ ./app/
+COPY batch_processor.py .
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+ENV CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif,.tiff,.jp2
+ENV GDAL_HTTP_TIMEOUT=600
+ENV GDAL_HTTP_MAX_RETRY=5
+ENV GDAL_HTTP_RETRY_DELAY=10
+ENV CPL_VSIL_CURL_CHUNK_SIZE=10485760
+ENV GDAL_HTTP_CONNECTTIMEOUT=60
+ENV GDAL_CACHEMAX=512
+
+# Run the batch processor
+ENTRYPOINT ["python3", "batch_processor.py"]

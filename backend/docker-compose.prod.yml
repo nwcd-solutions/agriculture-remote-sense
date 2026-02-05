@@ -1,0 +1,79 @@
+# Production Docker Compose Configuration for API Service
+# This file is used for production deployment with optimized settings
+
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: satellite-gis-api:latest
+    container_name: satellite-gis-api-prod
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # STAC API Configuration
+      - STAC_API_URL=${STAC_API_URL:-https://earth-search.aws.element84.com/v1}
+      
+      # Server Configuration
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=False
+      
+      # CORS Configuration
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      
+      # AWS Configuration
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      
+      # AWS Batch Configuration
+      - BATCH_JOB_QUEUE=${BATCH_JOB_QUEUE}
+      - BATCH_JOB_DEFINITION=${BATCH_JOB_DEFINITION}
+      - BATCH_S3_BUCKET=${BATCH_S3_BUCKET}
+      
+      # DynamoDB Configuration
+      - DYNAMODB_TABLE=${DYNAMODB_TABLE:-ProcessingTasks}
+      - DYNAMODB_ENDPOINT=${DYNAMODB_ENDPOINT:-}
+      
+      # Python settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    
+    volumes:
+      # Mount only data directories, not source code
+      - api-data:/app/data
+      - api-temp:/app/temp
+    
+    networks:
+      - satellite-gis-network
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+
+volumes:
+  api-data:
+    driver: local
+  api-temp:
+    driver: local
+
+networks:
+  satellite-gis-network:
+    driver: bridge

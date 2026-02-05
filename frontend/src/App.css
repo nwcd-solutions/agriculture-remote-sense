@@ -1,0 +1,89 @@
+.app {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background-color: #001529;
+  color: white;
+  padding: 16px 24px;
+  text-align: center;
+  height: 80px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: white;
+}
+
+.app-header p {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  opacity: 0.8;
+  line-height: 1.5;
+}
+
+.app-main {
+  flex: 1;
+  overflow: hidden;
+}
+
+.app-sider {
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
+  overflow: hidden;
+}
+
+.app-sider:last-child {
+  border-right: none;
+  border-left: 1px solid #f0f0f0;
+}
+
+.app-sider-right {
+  display: flex;
+  flex-direction: column;
+}
+
+.right-panel-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.results-panel-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.processing-panel-wrapper {
+  flex-shrink: 0;
+  border-top: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+
+.app-content {
+  background: #f0f2f5;
+  overflow: hidden;
+}
+
+.placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f0f2f5;
+  color: #8c8c8c;
+  font-size: 16px;
+}

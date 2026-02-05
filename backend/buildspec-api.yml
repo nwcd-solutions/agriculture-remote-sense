@@ -1,0 +1,74 @@
+version: 0.2
+
+# BuildSpec for API Container
+# This file is used by AWS CodeBuild to build and push the API Docker image
+
+env:
+  variables:
+    IMAGE_TAG: "latest"
+  parameter-store:
+    # Optional: Store sensitive values in Parameter Store
+    # DOCKER_USERNAME: /satellite-gis/docker/username
+    # DOCKER_PASSWORD: /satellite-gis/docker/password
+
+phases:
+  pre_build:
+    commands:
+      - echo "========================================="
+      - echo "Building API Container"
+      - echo "========================================="
+      - echo "Build started on $(date)"
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+      - echo "Repository URI - $ECR_REPOSITORY_URI"
+      - echo "Image tag - $IMAGE_TAG"
+      - echo "Build number - $CODEBUILD_BUILD_NUMBER"
+      
+  build:
+    commands:
+      - echo "========================================="
+      - echo "Building Docker Image"
+      - echo "========================================="
+      - cd backend
+      - echo "Building with Dockerfile..."
+      - docker build -t $ECR_REPOSITORY_URI:latest -f Dockerfile .
+      - echo "Tagging image with commit hash..."
+      - docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:$IMAGE_TAG
+      - echo "Tagging image with build number..."
+      - docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:build-$CODEBUILD_BUILD_NUMBER
+      - echo "Build completed successfully"
+      
+  post_build:
+    commands:
+      - echo "========================================="
+      - echo "Pushing Docker Images"
+      - echo "========================================="
+      - echo "Pushing latest tag..."
+      - docker push $ECR_REPOSITORY_URI:latest
+      - echo "Pushing commit hash tag..."
+      - docker push $ECR_REPOSITORY_URI:$IMAGE_TAG
+      - echo "Pushing build number tag..."
+      - docker push $ECR_REPOSITORY_URI:build-$CODEBUILD_BUILD_NUMBER
+      - echo "========================================="
+      - echo "Build Complete!"
+      - echo "========================================="
+      - echo "Repository - $ECR_REPOSITORY_URI"
+      - echo "Tags - latest, $IMAGE_TAG, build-$CODEBUILD_BUILD_NUMBER"
+      - echo "Build completed on $(date)"
+      - echo "========================================="
+      - echo "Writing image definitions file for ECS deployment..."
+      - printf '[{"name":"api","imageUri":"%s"}]' $ECR_REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - backend/imagedefinitions.json
+  name: ApiImageDefinitions
+
+cache:
+  paths:
+    - '/root/.cache/**/*'
+    - '/var/lib/docker/**/*'

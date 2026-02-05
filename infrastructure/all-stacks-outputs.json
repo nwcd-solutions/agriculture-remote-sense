@@ -1,0 +1,278 @@
+[
+    {
+        "StackName": "SatelliteGis-Monitoring-dev",
+        "Outputs": [
+            {
+                "OutputKey": "AlarmTopicArn",
+                "OutputValue": "arn:aws:sns:us-east-1:880755836258:satellite-gis-alarms-dev",
+                "Description": "SNS topic ARN for alarms",
+                "ExportName": "SatelliteGis-AlarmTopic-dev"
+            },
+            {
+                "OutputKey": "DashboardUrl",
+                "OutputValue": "https://console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SatelliteGis-dev",
+                "Description": "CloudWatch dashboard URL"
+            }
+        ]
+    },
+    {
+        "StackName": "SatelliteGis-Frontend-dev",
+        "Outputs": [
+            {
+                "OutputKey": "FrontendConfig",
+                "OutputValue": "{\"apiUrl\":\"http://satellite-gis-alb-dev-674728147.us-east-1.elb.amazonaws.com\",\"environment\":\"dev\"}",
+                "Description": "Frontend configuration JSON",
+                "ExportName": "SatelliteGis-FrontendConfig-dev"
+            },
+            {
+                "OutputKey": "WebsiteUrl",
+                "OutputValue": "https://dev.dfjse3jyewuby.amplifyapp.com",
+                "Description": "Frontend website URL",
+                "ExportName": "SatelliteGis-WebsiteUrl-dev"
+            },
+            {
+                "OutputKey": "AmplifyAppName",
+                "OutputValue": "satellite-gis-dev",
+                "Description": "Amplify App Name",
+                "ExportName": "SatelliteGis-AmplifyAppName-dev"
+            },
+            {
+                "OutputKey": "AmplifyAppId",
+                "OutputValue": "dfjse3jyewuby",
+                "Description": "Amplify App ID",
+                "ExportName": "SatelliteGis-AmplifyAppId-dev"
+            },
+            {
+                "OutputKey": "AmplifyDefaultDomain",
+                "OutputValue": "dfjse3jyewuby.amplifyapp.com",
+                "Description": "Amplify default domain",
+                "ExportName": "SatelliteGis-AmplifyDomain-dev"
+            }
+        ]
+    },
+    {
+        "StackName": "SatelliteGis-Api-dev",
+        "Outputs": [
+            {
+                "OutputKey": "ApiUrl",
+                "OutputValue": "http://satellite-gis-alb-dev-674728147.us-east-1.elb.amazonaws.com",
+                "Description": "API base URL",
+                "ExportName": "SatelliteGis-ApiBaseUrl-dev"
+            },
+            {
+                "OutputKey": "ExportsOutputFnGetAttServiceD69D759BName51127533",
+                "OutputValue": "satellite-gis-api-dev",
+                "ExportName": "SatelliteGis-Api-dev:ExportsOutputFnGetAttServiceD69D759BName51127533"
+            },
+            {
+                "OutputKey": "ServiceName",
+                "OutputValue": "satellite-gis-api-dev",
+                "Description": "ECS service name",
+                "ExportName": "SatelliteGis-ApiServiceName-dev"
+            },
+            {
+                "OutputKey": "ExportsOutputRefApiCluster7CE9CBE605BC530B",
+                "OutputValue": "satellite-gis-api-dev",
+                "ExportName": "SatelliteGis-Api-dev:ExportsOutputRefApiCluster7CE9CBE605BC530B"
+            },
+            {
+                "OutputKey": "ExportsOutputFnGetAttLoadBalancerBE9EEC3ADNSNameD038AF30",
+                "OutputValue": "satellite-gis-alb-dev-674728147.us-east-1.elb.amazonaws.com",
+                "ExportName": "SatelliteGis-Api-dev:ExportsOutputFnGetAttLoadBalancerBE9EEC3ADNSNameD038AF30"
+            },
+            {
+                "OutputKey": "ClusterName",
+                "OutputValue": "satellite-gis-api-dev",
+                "Description": "ECS cluster name",
+                "ExportName": "SatelliteGis-ApiClusterName-dev"
+            },
+            {
+                "OutputKey": "LogGroupName",
+                "OutputValue": "/ecs/satellite-gis-api-dev",
+                "Description": "CloudWatch log group name",
+                "ExportName": "SatelliteGis-ApiLogGroup-dev"
+            },
+            {
+                "OutputKey": "LoadBalancerDnsName",
+                "OutputValue": "satellite-gis-alb-dev-674728147.us-east-1.elb.amazonaws.com",
+                "Description": "Application Load Balancer DNS name",
+                "ExportName": "SatelliteGis-ApiUrl-dev"
+            }
+        ]
+    },
+    {
+        "StackName": "SatelliteGis-Batch-dev",
+        "Outputs": [
+            {
+                "OutputKey": "ExportsOutputFnGetAttJobQueueEE3AD499JobQueueArnDEE06CD8",
+                "OutputValue": "arn:aws:batch:us-east-1:880755836258:job-queue/satellite-gis-queue-dev",
+                "ExportName": "SatelliteGis-Batch-dev:ExportsOutputFnGetAttJobQueueEE3AD499JobQueueArnDEE06CD8"
+            },
+            {
+                "OutputKey": "JobDefinitionArn",
+                "OutputValue": "arn:aws:batch:us-east-1:880755836258:job-definition/satellite-gis-processor-dev:2",
+                "Description": "AWS Batch job definition ARN",
+                "ExportName": "SatelliteGis-BatchJobDefinition-dev"
+            },
+            {
+                "OutputKey": "ComputeEnvironmentArn",
+                "OutputValue": "arn:aws:batch:us-east-1:880755836258:compute-environment/satellite-gis-compute-dev",
+                "Description": "AWS Batch compute environment ARN",
+                "ExportName": "SatelliteGis-BatchComputeEnv-dev"
+            },
+            {
+                "OutputKey": "RepositoryUri",
+                "OutputValue": "880755836258.dkr.ecr.us-east-1.amazonaws.com/satellite-gis-batch-dev",
+                "Description": "ECR repository URI for Batch container",
+                "ExportName": "SatelliteGis-BatchRepository-dev"
+            },
+            {
+                "OutputKey": "ExportsOutputRefJobDefinition24FFE3ED753C6AD0",
+                "OutputValue": "arn:aws:batch:us-east-1:880755836258:job-definition/satellite-gis-processor-dev:2",
+                "ExportName": "SatelliteGis-Batch-dev:ExportsOutputRefJobDefinition24FFE3ED753C6AD0"
+            },
+            {
+                "OutputKey": "JobQueueArn",
+                "OutputValue": "arn:aws:batch:us-east-1:880755836258:job-queue/satellite-gis-queue-dev",
+                "Description": "AWS Batch job queue ARN",
+                "ExportName": "SatelliteGis-BatchJobQueue-dev"
+            },
+            {
+                "OutputKey": "JobQueueName",
+                "OutputValue": "satellite-gis-queue-dev",
+                "Description": "AWS Batch job queue name",
+                "ExportName": "SatelliteGis-BatchJobQueueName-dev"
+            }
+        ]
+    },
+    {
+        "StackName": "SatelliteGis-Database-dev",
+        "Outputs": [
+            {
+                "OutputKey": "TasksTableStreamArn",
+                "OutputValue": "arn:aws:dynamodb:us-east-1:880755836258:table/ProcessingTasks-dev/stream/2026-02-02T00:40:11.463",
+                "Description": "DynamoDB table stream ARN",
+                "ExportName": "SatelliteGis-TasksTableStreamArn-dev"
+            },
+            {
+                "OutputKey": "TasksTableArn",
+                "OutputValue": "arn:aws:dynamodb:us-east-1:880755836258:table/ProcessingTasks-dev",
+                "Description": "DynamoDB table ARN for processing tasks",
+                "ExportName": "SatelliteGis-TasksTableArn-dev"
+            },
+            {
+                "OutputKey": "ExportsOutputFnGetAttProcessingTasksTableD0C0E64BArn7509479C",
+                "OutputValue": "arn:aws:dynamodb:us-east-1:880755836258:table/ProcessingTasks-dev",
+                "ExportName": "SatelliteGis-Database-dev:ExportsOutputFnGetAttProcessingTasksTableD0C0E64BArn7509479C"
+            },
+            {
+                "OutputKey": "ExportsOutputRefProcessingTasksTableD0C0E64BA65B68A2",
+                "OutputValue": "ProcessingTasks-dev",
+                "ExportName": "SatelliteGis-Database-dev:ExportsOutputRefProcessingTasksTableD0C0E64BA65B68A2"
+            },
+            {
+                "OutputKey": "TasksTableName",
+                "OutputValue": "ProcessingTasks-dev",
+                "Description": "DynamoDB table name for processing tasks",
+                "ExportName": "SatelliteGis-TasksTable-dev"
+            }
+        ]
+    },
+    {
+        "StackName": "SatelliteGis-Storage-dev",
+        "Outputs": [
+            {
+                "OutputKey": "ResultsBucketName",
+                "OutputValue": "satellite-gis-results-dev-880755836258",
+                "Description": "S3 bucket name for processing results",
+                "ExportName": "SatelliteGis-ResultsBucket-dev"
+            },
+            {
+                "OutputKey": "ExportsOutputRefResultsBucketA95A21039E45ECDD",
+                "OutputValue": "satellite-gis-results-dev-880755836258",
+                "ExportName": "SatelliteGis-Storage-dev:ExportsOutputRefResultsBucketA95A21039E45ECDD"
+            },
+            {
+                "OutputKey": "ResultsBucketDomainName",
+                "OutputValue": "satellite-gis-results-dev-880755836258.s3.amazonaws.com",
+                "Description": "S3 bucket domain name",
+                "ExportName": "SatelliteGis-ResultsBucketDomain-dev"
+            },
+            {
+                "OutputKey": "ResultsBucketArn",
+                "OutputValue": "arn:aws:s3:::satellite-gis-results-dev-880755836258",
+                "Description": "S3 bucket ARN for processing results",
+                "ExportName": "SatelliteGis-ResultsBucketArn-dev"
+            },
+            {
+                "OutputKey": "ExportsOutputFnGetAttResultsBucketA95A2103ArnC89E3319",
+                "OutputValue": "arn:aws:s3:::satellite-gis-results-dev-880755836258",
+                "ExportName": "SatelliteGis-Storage-dev:ExportsOutputFnGetAttResultsBucketA95A2103ArnC89E3319"
+            }
+        ]
+    },
+    {
+        "StackName": "SatelliteGis-Network-dev",
+        "Outputs": [
+            {
+                "OutputKey": "ExportsOutputRefSatelliteGisVpcPrivateSubnet1SubnetE1766FFEFD244051",
+                "OutputValue": "subnet-0f4e28d9a05e4e004",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputRefSatelliteGisVpcPrivateSubnet1SubnetE1766FFEFD244051"
+            },
+            {
+                "OutputKey": "BatchSecurityGroupId",
+                "OutputValue": "sg-036ae7c488adea657",
+                "Description": "Batch Security Group ID",
+                "ExportName": "dev-BatchSecurityGroupId"
+            },
+            {
+                "OutputKey": "VpcId",
+                "OutputValue": "vpc-036772a85897d2abb",
+                "Description": "VPC ID",
+                "ExportName": "dev-VpcId"
+            },
+            {
+                "OutputKey": "ExportsOutputRefSatelliteGisVpcPrivateSubnet2SubnetD156137AC2516DB2",
+                "OutputValue": "subnet-06bd88009d99e1543",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputRefSatelliteGisVpcPrivateSubnet2SubnetD156137AC2516DB2"
+            },
+            {
+                "OutputKey": "ExportsOutputRefSatelliteGisVpcPublicSubnet2Subnet6A1F47A841084029",
+                "OutputValue": "subnet-0ce47e64a4a71a85b",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputRefSatelliteGisVpcPublicSubnet2Subnet6A1F47A841084029"
+            },
+            {
+                "OutputKey": "ExportsOutputFnGetAttBatchSecurityGroup77EC865FGroupId9BE31302",
+                "OutputValue": "sg-036ae7c488adea657",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputFnGetAttBatchSecurityGroup77EC865FGroupId9BE31302"
+            },
+            {
+                "OutputKey": "ExportsOutputRefSatelliteGisVpcPublicSubnet1Subnet4D97D710F6E543B5",
+                "OutputValue": "subnet-0eb5d9bad4839ab20",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputRefSatelliteGisVpcPublicSubnet1Subnet4D97D710F6E543B5"
+            },
+            {
+                "OutputKey": "ExportsOutputRefSatelliteGisVpcE044814D0956D986",
+                "OutputValue": "vpc-036772a85897d2abb",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputRefSatelliteGisVpcE044814D0956D986"
+            },
+            {
+                "OutputKey": "ExportsOutputFnGetAttApiSecurityGroup4E5BB726GroupIdA239A589",
+                "OutputValue": "sg-005d47cdb4d88aa5a",
+                "ExportName": "SatelliteGis-Network-dev:ExportsOutputFnGetAttApiSecurityGroup4E5BB726GroupIdA239A589"
+            },
+            {
+                "OutputKey": "ApiSecurityGroupId",
+                "OutputValue": "sg-005d47cdb4d88aa5a",
+                "Description": "API Security Group ID",
+                "ExportName": "dev-ApiSecurityGroupId"
+            },
+            {
+                "OutputKey": "DatabaseSecurityGroupId",
+                "OutputValue": "sg-0c953f3ccd5a593cb",
+                "Description": "Database Security Group ID",
+                "ExportName": "dev-DatabaseSecurityGroupId"
+            }
+        ]
+    }
+]

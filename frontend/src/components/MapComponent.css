@@ -1,0 +1,37 @@
+.map-component {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.map-component .leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* 自定义绘制控件样式 */
+.leaflet-draw-toolbar a {
+  background-color: #fff;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.leaflet-draw-toolbar a:hover {
+  background-color: #f4f4f4;
+}
+
+/* AOI 绘制样式 */
+.leaflet-draw-tooltip {
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+/* 测量标签样式 */
+.leaflet-draw-tooltip-subtext {
+  color: #ccc;
+  font-size: 11px;
+}

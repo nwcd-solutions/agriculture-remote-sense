@@ -1,0 +1,49 @@
+.processing-config-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.processing-config-panel .ant-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.processing-config-panel .ant-card-body {
+  overflow-y: auto;
+  max-height: 400px;
+}
+
+.processing-config-panel .ant-form-item {
+  margin-bottom: 20px;
+}
+
+.index-option {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.index-option:hover {
+  background-color: #fafafa;
+  border-color: #d9d9d9;
+}
+
+.index-option .ant-checkbox-wrapper {
+  width: 100%;
+}
+
+.index-info {
+  margin-left: 8px;
+}
+
+.task-progress {
+  margin-top: 16px;
+}
+
+.task-status {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
