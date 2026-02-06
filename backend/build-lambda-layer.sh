@@ -10,7 +10,7 @@ rm -rf lambda-layer
 mkdir -p lambda-layer/python
 
 # Install dependencies
-pip install -r requirements-lambda.txt -t lambda-layer/python --upgrade
+pip3 install -r requirements-lambda.txt -t lambda-layer/python --upgrade
 
 # Copy only necessary app modules (without heavy dependencies)
 mkdir -p lambda-layer/python/app/models
