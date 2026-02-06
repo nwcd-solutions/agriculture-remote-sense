@@ -42,9 +42,13 @@ export class FrontendStack extends cdk.Stack {
         },
         physicalResourceId: cr.PhysicalResourceId.of(apiKeyId),
       },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-      }),
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['apigateway:GET'],
+          resources: ['*'],  // API Gateway API Keys don't support resource-level permissions
+        }),
+      ]),
     });
 
     const apiKey = getApiKeyValue.getResponseField('value');
