@@ -1,8 +1,8 @@
 """
 业务逻辑服务包
 """
-from .stac_service import STACQueryService
-from .task_manager import TaskManager, task_manager
+
+# 核心服务 - Lambda需要
 from .batch_job_manager import BatchJobManager
 from .s3_storage_service import S3StorageService
 from .task_repository import (
@@ -11,6 +11,17 @@ from .task_repository import (
     TaskNotFoundError,
     DatabaseConnectionError
 )
+
+# 可选服务 - 仅在需要时导入
+def get_stac_service():
+    """延迟导入STAC服务"""
+    from .stac_service import STACQueryService
+    return STACQueryService
+
+def get_task_manager():
+    """延迟导入任务管理器"""
+    from .task_manager import TaskManager, task_manager
+    return TaskManager, task_manager
 
 # 尝试导入需要geospatial依赖的模块
 try:
@@ -30,11 +41,10 @@ except ImportError as e:
 
 __all__ = [
     "AOIService",
-    "STACQueryService",
+    "get_stac_service",
     "RasterProcessor",
     "VegetationIndexCalculator",
-    "TaskManager",
-    "task_manager",
+    "get_task_manager",
     "ProcessingService",
     "BatchJobManager",
     "S3StorageService",
