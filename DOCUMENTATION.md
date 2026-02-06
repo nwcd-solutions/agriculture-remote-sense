@@ -20,7 +20,6 @@
 
 ### Backend
 - **[.env.example](./backend/.env.example)** - 环境变量配置示例
-- **[Dockerfile](./backend/Dockerfile)** - API 容器配置
 - **[Dockerfile.batch](./backend/Dockerfile.batch)** - Batch 处理容器配置
 
 ### Frontend
@@ -55,13 +54,7 @@
 
 ## 📦 构建配置
 
-### Docker
-- **[docker-compose.yml](./docker-compose.yml)** - 本地开发环境
-- **[backend/docker-compose.prod.yml](./backend/docker-compose.prod.yml)** - 生产环境
-
 ### CI/CD
-- **[backend/buildspec-api.yml](./backend/buildspec-api.yml)** - API 构建规范
-- **[backend/buildspec-batch.yml](./backend/buildspec-batch.yml)** - Batch 构建规范
 - **[amplify.yml](./amplify.yml)** - Amplify 构建配置
 
 ## 🛠️ 脚本工具
@@ -76,7 +69,6 @@
 - **[deploy-to-amplify.sh](./frontend/deploy-to-amplify.sh)** - Amplify 部署助手
 
 ### Backend
-- **[build-and-push.sh](./backend/build-and-push.sh)** - 构建并推送 Docker 镜像
 - **[verify_database.py](./backend/verify_database.py)** - 数据库验证脚本
 
 ## 📖 快速链接
