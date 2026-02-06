@@ -100,16 +100,22 @@ export class LambdaApiStack extends cdk.Stack {
       effect: iam.Effect.ALLOW,
       actions: [
         'batch:SubmitJob',
-        'batch:DescribeJobs',
-        'batch:TerminateJob',
-        'batch:ListJobs',
       ],
       resources: [
         batchJobQueue.jobQueueArn,
         // Use wildcard to match all versions of job definition
         `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/${batchJobDefinition.jobDefinitionName}*`,
-        `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job/*`,
       ],
+    }));
+
+    processFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'batch:DescribeJobs',
+        'batch:TerminateJob',
+        'batch:ListJobs',
+      ],
+      resources: ['*'],  // These actions require wildcard resource
     }));
 
     // Grant access to AWS Open Data
