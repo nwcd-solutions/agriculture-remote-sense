@@ -278,7 +278,9 @@ function App() {
   // 刷新任务状态
   const handleRefreshTask = useCallback(async (taskId) => {
     try {
+      console.log('刷新任务状态:', taskId);
       const response = await axios.get(`/api/process/tasks/${taskId}`);
+      console.log('任务状态响应:', response.data);
       setProcessingTask(response.data);
       message.success('任务状态已刷新');
       
@@ -289,7 +291,9 @@ function App() {
       }
     } catch (error) {
       console.error('刷新任务状态失败:', error);
-      message.error(error.response?.data?.detail || '刷新任务状态失败');
+      console.error('错误详情:', error.response?.data);
+      const errorMsg = error.response?.data?.error || error.response?.data?.detail || error.message || '刷新任务状态失败';
+      message.error(`刷新失败: ${errorMsg}`);
     }
   }, [pollingInterval, startPolling]);
 

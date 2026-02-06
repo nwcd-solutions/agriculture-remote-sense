@@ -583,72 +583,152 @@ def submit_job(event):
 
 def get_task_status(event):
     """Get task status"""
-    path = event.get('path', event.get('rawPath', ''))
-    task_id = path.split('/')[-1]
-    
-    task_repository = get_task_repository()
-    task = task_repository.get_task(task_id)
-    
-    # Query Batch status if available
-    if task.batch_job_id:
-        batch_manager = get_batch_manager()
-        batch_status = batch_manager.get_job_status(task.batch_job_id)
+    try:
+        path = event.get('path', event.get('rawPath', ''))
+        task_id = path.split('/')[-1]
         
-        # Update task status based on Batch status
-        if batch_status['status'] == 'SUCCEEDED' and task.status != 'completed':
-            s3_service = get_s3_service()
-            output_files = []
-            for index in task.parameters.get('indices', []):
-                s3_key = f"tasks/{task_id}/{index}.tif"
-                if s3_service.file_exists(s3_key):
-                    presigned_url = s3_service.generate_presigned_url(s3_key, expiration=3600)
-                    file_size = s3_service.get_file_size(s3_key)
-                    output_files.append({
-                        'name': f"{index}.tif",
-                        's3_key': s3_key,
-                        'download_url': presigned_url,
-                        'size_mb': round(file_size / (1024 * 1024), 2),
-                        'index': index
-                    })
+        logger.info(f"Getting task status for: {task_id}")
+        
+        task_repository = get_task_repository()
+        task = task_repository.get_task(task_id)
+        
+        # Query Batch status if available
+        if task.batch_job_id:
+            batch_manager = get_batch_manager()
+            batch_status = batch_manager.get_job_status(task.batch_job_id)
             
-            task_repository.update_task_status(
-                task_id=task_id,
-                status='completed',
-                progress=100,
-                result={'output_files': output_files}
-            )
-            task = task_repository.get_task(task_id)
-    
-    return {
-        'statusCode': 200,
-        'headers': cors_headers(),
-        'body': json.dumps(task.to_dict(), default=str)
-    }
+            logger.info(f"Batch status for {task.batch_job_id}: {batch_status['status']}")
+            
+            # Update batch_job_status in task
+            if batch_status['status'] != task.batch_job_status:
+                task_repository.update_task_status(
+                    task_id=task_id,
+                    status=task.status,
+                    batch_job_status=batch_status['status']
+                )
+            
+            # Map Batch status to task status
+            batch_to_task_status = {
+                'SUBMITTED': 'queued',
+                'PENDING': 'queued',
+                'RUNNABLE': 'queued',
+                'STARTING': 'running',
+                'RUNNING': 'running',
+                'SUCCEEDED': 'completed',
+                'FAILED': 'failed'
+            }
+            
+            new_task_status = batch_to_task_status.get(batch_status['status'], task.status)
+            
+            # Update task status based on Batch status
+            if new_task_status == 'completed' and task.status != 'completed':
+                s3_service = get_s3_service()
+                output_files = []
+                for index in task.parameters.get('indices', []):
+                    s3_key = f"tasks/{task_id}/{index}.tif"
+                    if s3_service.file_exists(s3_key):
+                        presigned_url = s3_service.generate_presigned_url(s3_key, expiration=3600)
+                        file_size = s3_service.get_file_size(s3_key)
+                        output_files.append({
+                            'name': f"{index}.tif",
+                            's3_key': s3_key,
+                            'download_url': presigned_url,
+                            'size_mb': round(file_size / (1024 * 1024), 2),
+                            'index': index
+                        })
+                
+                task_repository.update_task_status(
+                    task_id=task_id,
+                    status='completed',
+                    progress=100,
+                    batch_job_status=batch_status['status'],
+                    completed_at=datetime.now(timezone.utc),
+                    result={'output_files': output_files}
+                )
+                task = task_repository.get_task(task_id)
+            elif new_task_status == 'failed' and task.status != 'failed':
+                task_repository.update_task_status(
+                    task_id=task_id,
+                    status='failed',
+                    batch_job_status=batch_status['status'],
+                    completed_at=datetime.now(timezone.utc),
+                    error=batch_status.get('status_reason', 'Batch job failed')
+                )
+                task = task_repository.get_task(task_id)
+            elif new_task_status == 'running' and task.status == 'queued':
+                task_repository.update_task_status(
+                    task_id=task_id,
+                    status='running',
+                    progress=50,
+                    batch_job_status=batch_status['status'],
+                    started_at=datetime.now(timezone.utc)
+                )
+                task = task_repository.get_task(task_id)
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps(task.to_dict(), default=str)
+        }
+    except ValueError as e:
+        logger.error(f"Task not found: {str(e)}")
+        return {
+            'statusCode': 404,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': 'Task not found', 'task_id': task_id})
+        }
+    except Exception as e:
+        logger.error(f"Get task status error: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': str(e)})
+        }
 
 
 def cancel_task(event):
     """Cancel task"""
-    path = event.get('path', event.get('rawPath', ''))
-    task_id = path.split('/')[-1]
-    
-    task_repository = get_task_repository()
-    task = task_repository.get_task(task_id)
-    
-    if task.batch_job_id:
-        batch_manager = get_batch_manager()
-        batch_manager.cancel_job(task.batch_job_id, reason="Cancelled by user")
-    
-    task_repository.update_task_status(
-        task_id=task_id,
-        status='failed',
-        error='Cancelled by user'
-    )
-    
-    return {
-        'statusCode': 200,
-        'headers': cors_headers(),
-        'body': json.dumps({'task_id': task_id, 'status': 'cancelled'})
-    }
+    try:
+        path = event.get('path', event.get('rawPath', ''))
+        task_id = path.split('/')[-1]
+        
+        logger.info(f"Cancelling task: {task_id}")
+        
+        task_repository = get_task_repository()
+        task = task_repository.get_task(task_id)
+        
+        if task.batch_job_id:
+            batch_manager = get_batch_manager()
+            success = batch_manager.cancel_job(task.batch_job_id, reason="Cancelled by user")
+            if not success:
+                logger.warning(f"Failed to cancel batch job {task.batch_job_id}")
+        
+        task_repository.update_task_status(
+            task_id=task_id,
+            status='failed',
+            error='Cancelled by user',
+            completed_at=datetime.now(timezone.utc)
+        )
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({'task_id': task_id, 'status': 'cancelled'})
+        }
+    except ValueError as e:
+        logger.error(f"Task not found: {str(e)}")
+        return {
+            'statusCode': 404,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': 'Task not found', 'task_id': task_id})
+        }
+    except Exception as e:
+        logger.error(f"Cancel task error: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': str(e)})
+        }
 
 
 def list_tasks(event):
