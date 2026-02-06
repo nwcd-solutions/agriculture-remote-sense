@@ -14,7 +14,7 @@ export interface LambdaApiStackProps extends cdk.StackProps {
   tasksTable: dynamodb.Table;
   resultsBucket: s3.Bucket;
   batchJobQueue: batch.JobQueue;
-  batchJobDefinition: batch.EcsJobDefinition;
+  batchJobDefinitionName: string;
 }
 
 export class LambdaApiStack extends cdk.Stack {
@@ -25,7 +25,7 @@ export class LambdaApiStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: LambdaApiStackProps) {
     super(scope, id, props);
 
-    const { config, tasksTable, resultsBucket, batchJobQueue, batchJobDefinition } = props;
+    const { config, tasksTable, resultsBucket, batchJobQueue, batchJobDefinitionName } = props;
 
     // Create CloudWatch log group for API Gateway
     const apiLogGroup = new logs.LogGroup(this, 'ApiLogGroup', {
@@ -72,7 +72,7 @@ export class LambdaApiStack extends cdk.Stack {
         DYNAMODB_TABLE: tasksTable.tableName,
         S3_BUCKET: resultsBucket.bucketName,
         BATCH_JOB_QUEUE: batchJobQueue.jobQueueName,
-        BATCH_JOB_DEFINITION: batchJobDefinition.jobDefinitionName,
+        BATCH_JOB_DEFINITION: batchJobDefinitionName,
         LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
       },
     });
@@ -104,7 +104,7 @@ export class LambdaApiStack extends cdk.Stack {
       resources: [
         batchJobQueue.jobQueueArn,
         // Use wildcard to match all versions of job definition
-        `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/${batchJobDefinition.jobDefinitionName}*`,
+        `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/${batchJobDefinitionName}*`,
       ],
     }));
 

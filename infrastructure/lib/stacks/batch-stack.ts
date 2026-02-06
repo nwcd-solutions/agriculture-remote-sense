@@ -140,25 +140,21 @@ export class BatchStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'JobQueueArn', {
       value: this.jobQueue.jobQueueArn,
       description: 'AWS Batch job queue ARN',
-      exportName: `SatelliteGis-BatchJobQueue-${config.environment}`,
     });
 
     new cdk.CfnOutput(this, 'JobQueueName', {
       value: this.jobQueue.jobQueueName,
       description: 'AWS Batch job queue name',
-      exportName: `SatelliteGis-BatchJobQueueName-${config.environment}`,
     });
 
     new cdk.CfnOutput(this, 'JobDefinitionArn', {
       value: this.jobDefinition.jobDefinitionArn,
       description: 'AWS Batch job definition ARN',
-      exportName: `SatelliteGis-BatchJobDefinition-${config.environment}`,
     });
 
     new cdk.CfnOutput(this, 'ComputeEnvironmentArn', {
       value: this.computeEnvironment.computeEnvironmentArn,
       description: 'AWS Batch compute environment ARN',
-      exportName: `SatelliteGis-BatchComputeEnv-${config.environment}`,
     });
 
     // Add tags

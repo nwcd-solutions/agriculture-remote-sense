@@ -67,7 +67,7 @@ const apiStack = new LambdaApiStack(app, `SatelliteGis-Api-${config.environment}
   tasksTable: databaseStack.tasksTable,
   resultsBucket: storageStack.resultsBucket,
   batchJobQueue: batchStack.jobQueue,
-  batchJobDefinition: batchStack.jobDefinition,
+  batchJobDefinitionName: `satellite-gis-processor-${config.environment}`,
 });
 
 // Create Frontend Stack
