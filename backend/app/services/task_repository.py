@@ -168,7 +168,7 @@ class TaskRepository:
         batch_job_status: Optional[str] = None,
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
-        result: Optional[ProcessingResult] = None,
+        result: Optional[Any] = None,  # Can be ProcessingResult or dict
         error: Optional[str] = None,
         retry_count: Optional[int] = None
     ) -> bool:
@@ -183,7 +183,7 @@ class TaskRepository:
             batch_job_status: AWS Batch Job 状态
             started_at: 开始时间
             completed_at: 完成时间
-            result: 处理结果
+            result: 处理结果 (ProcessingResult 对象或 dict)
             error: 错误信息
             retry_count: 重试次数
             
@@ -229,7 +229,11 @@ class TaskRepository:
             if result is not None:
                 update_expression += ", #result = :result"
                 expression_attribute_names["#result"] = "result"
-                expression_attribute_values[":result"] = result.model_dump()
+                # Handle both ProcessingResult object and dict
+                if isinstance(result, dict):
+                    expression_attribute_values[":result"] = result
+                else:
+                    expression_attribute_values[":result"] = result.model_dump()
             
             if error is not None:
                 update_expression += ", #error = :error"

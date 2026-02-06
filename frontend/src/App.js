@@ -42,12 +42,7 @@ function App() {
   // 处理 AOI 变化
   const handleAOIChange = useCallback((aoiGeoJSON) => {
     setAoi(aoiGeoJSON);
-    if (aoiGeoJSON) {
-      message.success('AOI 已更新');
-      console.log('AOI GeoJSON:', aoiGeoJSON);
-    } else {
-      message.info('AOI 已清除');
-    }
+    console.log('AOI GeoJSON:', aoiGeoJSON);
   }, []);
 
   // 处理数据查询
@@ -62,7 +57,6 @@ function App() {
       
       if (response.data && response.data.results) {
         setQueryResults(response.data.results);
-        message.success(`查询成功，找到 ${response.data.results.length} 个影像`);
       } else {
         setQueryResults([]);
         message.info('未找到符合条件的影像');
@@ -80,7 +74,6 @@ function App() {
   const handleImageSelect = useCallback((image) => {
     console.log('选中影像:', image);
     setSelectedImage(image);
-    message.info(`已选择影像: ${image.id}`);
   }, []);
 
   // 轮询任务状态
@@ -96,12 +89,6 @@ function App() {
         if (pollingInterval) {
           clearInterval(pollingInterval);
           setPollingInterval(null);
-        }
-        
-        if (task.status === 'completed') {
-          message.success('处理完成！');
-        } else {
-          message.error('处理失败');
         }
       }
     } catch (error) {
@@ -228,7 +215,6 @@ function App() {
         };
         
         setProcessingTask(task);
-        message.success('处理任务已创建');
         
         // 开始轮询任务状态
         startPolling(response.data.task_id);
@@ -253,7 +239,6 @@ function App() {
   // 处理下载
   const handleDownload = useCallback((image) => {
     console.log('下载影像:', image);
-    message.info('下载功能将在后续实现');
     // 未来实现：调用下载 API 或直接下载文件
   }, []);
 
@@ -261,7 +246,6 @@ function App() {
   const handleCancelTask = useCallback(async (taskId) => {
     try {
       await axios.delete(`/api/process/tasks/${taskId}`);
-      message.success('任务已取消');
       
       // 停止轮询
       stopPolling();
@@ -282,7 +266,6 @@ function App() {
       const response = await axios.get(`/api/process/tasks/${taskId}`);
       console.log('任务状态响应:', response.data);
       setProcessingTask(response.data);
-      message.success('任务状态已刷新');
       
       // 如果任务正在进行且没有轮询，启动轮询
       const task = response.data;

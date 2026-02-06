@@ -17,6 +17,7 @@ import tempfile
 import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Any
+from decimal import Decimal
 
 # Import application services
 from app.services.raster_processor import RasterProcessor
@@ -25,6 +26,18 @@ from app.services.s3_storage_service import S3StorageService
 from app.services.task_repository import TaskRepository
 from app.models.aoi import GeoJSON
 from app.models.processing import ProcessingResult
+
+
+def convert_floats_to_decimal(obj: Any) -> Any:
+    """Convert all float values to Decimal for DynamoDB compatibility"""
+    if isinstance(obj, list):
+        return [convert_floats_to_decimal(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: convert_floats_to_decimal(value) for key, value in obj.items()}
+    elif isinstance(obj, float):
+        return Decimal(str(obj))
+    else:
+        return obj
 
 # Configure logging
 logging.basicConfig(
@@ -160,7 +173,10 @@ class BatchProcessor:
                 update_kwargs['completed_at'] = datetime.now(timezone.utc)
             
             if result:
-                update_kwargs['result'] = result
+                # Convert result to dict and then convert floats to Decimal
+                result_dict = result.model_dump()
+                result_dict = convert_floats_to_decimal(result_dict)
+                update_kwargs['result'] = result_dict
             
             if error:
                 update_kwargs['error'] = error

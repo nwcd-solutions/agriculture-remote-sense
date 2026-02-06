@@ -532,53 +532,72 @@ def handler(event, context):
 
 def submit_job(event):
     """Submit processing job to Batch"""
-    body = json.loads(event.get('body', '{}'))
-    
-    # Create task
-    task = ProcessingTask(
-        task_id="",
-        task_type="indices",
-        status="queued",
-        progress=0,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-        parameters=body
-    )
-    
-    # Save to DynamoDB
-    task_repository = get_task_repository()
-    task_id = task_repository.create_task(task)
-    task.task_id = task_id
-    
-    # Submit to Batch
-    batch_manager = get_batch_manager()
-    batch_job_id = batch_manager.submit_job(
-        task_id=task_id,
-        parameters=body,
-        job_name=f"indices-{task_id}",
-        retry_attempts=3,
-        timeout_seconds=3600
-    )
-    
-    # Update task with batch job ID
-    task_repository.update_task_status(
-        task_id=task_id,
-        status="queued",
-        batch_job_id=batch_job_id,
-        batch_job_status="SUBMITTED"
-    )
-    
-    return {
-        'statusCode': 200,
-        'headers': cors_headers(),
-        'body': json.dumps({
-            'task_id': task_id,
-            'status': 'queued',
-            'batch_job_id': batch_job_id,
-            'created_at': task.created_at.isoformat(),
-            'estimated_time': len(body.get('indices', [])) * 30
-        })
-    }
+    try:
+        body = json.loads(event.get('body', '{}'))
+        
+        # Convert floats to Decimal for DynamoDB compatibility
+        body = convert_floats_to_decimal(body)
+        
+        logger.info(f"Submitting job with parameters: {json.dumps(body, default=str)}")
+        
+        # Create task
+        task = ProcessingTask(
+            task_id="",
+            task_type="indices",
+            status="queued",
+            progress=0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            parameters=body
+        )
+        
+        # Save to DynamoDB
+        task_repository = get_task_repository()
+        task_id = task_repository.create_task(task)
+        task.task_id = task_id
+        
+        logger.info(f"Created task in DynamoDB: {task_id}")
+        
+        # Submit to Batch
+        batch_manager = get_batch_manager()
+        batch_job_id = batch_manager.submit_job(
+            task_id=task_id,
+            parameters=body,
+            job_name=f"indices-{task_id}",
+            retry_attempts=3,
+            timeout_seconds=3600
+        )
+        
+        logger.info(f"Submitted Batch job: {batch_job_id} for task: {task_id}")
+        
+        # Update task with batch job ID
+        task_repository.update_task_status(
+            task_id=task_id,
+            status="queued",
+            batch_job_id=batch_job_id,
+            batch_job_status="SUBMITTED"
+        )
+        
+        logger.info(f"Updated task {task_id} with batch_job_id: {batch_job_id}")
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'task_id': task_id,
+                'status': 'queued',
+                'batch_job_id': batch_job_id,
+                'created_at': task.created_at.isoformat(),
+                'estimated_time': len(body.get('indices', [])) * 30
+            })
+        }
+    except Exception as e:
+        logger.error(f"Submit job error: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': str(e)})
+        }
 
 
 def get_task_status(event):
