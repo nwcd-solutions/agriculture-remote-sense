@@ -128,12 +128,6 @@ def handler(event, context):
         userPassword: true,
         userSrp: true,
       },
-      oAuth: {
-        flows: {
-          authorizationCodeGrant: false,
-          implicitCodeGrant: false,
-        },
-      },
       preventUserExistenceErrors: true,
     });
 
