@@ -14,6 +14,18 @@ from decimal import Decimal
 import boto3
 from botocore.exceptions import ClientError
 
+
+def convert_floats_to_decimal(obj: Any) -> Any:
+    """Convert all float values to Decimal for DynamoDB compatibility"""
+    if isinstance(obj, list):
+        return [convert_floats_to_decimal(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: convert_floats_to_decimal(value) for key, value in obj.items()}
+    elif isinstance(obj, float):
+        return Decimal(str(obj))
+    else:
+        return obj
+
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
@@ -178,6 +190,9 @@ class TaskRepository:
         
         item = self._task_to_dynamodb(task)
         item["ttl"] = ttl
+        
+        # Convert floats to Decimal for DynamoDB
+        item = convert_floats_to_decimal(item)
         
         self.table.put_item(Item=item)
         return task.task_id
