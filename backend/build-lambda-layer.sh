@@ -12,8 +12,9 @@ mkdir -p lambda-layer/python
 # Use Docker to build in Lambda-compatible environment
 docker run --rm \
   -v "$PWD":/var/task \
+  --entrypoint /bin/bash \
   public.ecr.aws/lambda/python:3.11 \
-  bash -c "pip install -r requirements-lambda.txt -t /var/task/lambda-layer/python --upgrade"
+  -c "pip install -r /var/task/requirements-lambda.txt -t /var/task/lambda-layer/python --upgrade"
 
 # Copy only necessary app modules (without heavy dependencies)
 mkdir -p lambda-layer/python/app/models
