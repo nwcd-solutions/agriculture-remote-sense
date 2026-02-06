@@ -26,6 +26,18 @@ def convert_floats_to_decimal(obj: Any) -> Any:
     else:
         return obj
 
+
+def convert_decimal_to_float(obj: Any) -> Any:
+    """Convert all Decimal values to float for JSON serialization"""
+    if isinstance(obj, list):
+        return [convert_decimal_to_float(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {key: convert_decimal_to_float(value) for key, value in obj.items()}
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    else:
+        return obj
+
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
@@ -560,11 +572,12 @@ def submit_indices_job(event):
         
         logger.info(f"Created task in DynamoDB: {task_id}")
         
-        # Submit to Batch
+        # Submit to Batch (convert Decimals back to floats for JSON serialization)
         batch_manager = get_batch_manager()
+        batch_parameters = convert_decimal_to_float(body)
         batch_job_id = batch_manager.submit_job(
             task_id=task_id,
-            parameters=body,
+            parameters=batch_parameters,
             job_name=f"indices-{task_id}",
             retry_attempts=3,
             timeout_seconds=3600
@@ -666,9 +679,10 @@ def submit_composite_job(event):
 
         # Composite jobs may take longer — give 2 hours
         batch_manager = get_batch_manager()
+        batch_parameters = convert_decimal_to_float(body)
         batch_job_id = batch_manager.submit_job(
             task_id=task_id,
-            parameters=body,
+            parameters=batch_parameters,
             job_name=f"composite-{task_id}",
             retry_attempts=2,
             timeout_seconds=7200
