@@ -11,7 +11,7 @@ from app.models import (
     SatelliteImageResult,
     SatelliteImageAsset
 )
-from app.services import STACQueryService
+from app.services.stac_service import STACQueryService
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,8 @@ async def query_satellite_data(query: SatelliteQuery) -> SatelliteQueryResponse:
             items = stac_service.search_sentinel1(
                 aoi=aoi_dict,
                 date_range=date_range_dict,
-                product_type=product_type
+                product_type=product_type,
+                polarization=query.polarization
             )
             
         elif query.satellite == "landsat-8":

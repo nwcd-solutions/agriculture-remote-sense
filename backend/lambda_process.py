@@ -505,7 +505,9 @@ def handler(event, context):
         
         # Route to appropriate handler
         if http_method == 'POST' and '/indices' in path:
-            return submit_job(event)
+            return submit_indices_job(event)
+        elif http_method == 'POST' and '/composite' in path:
+            return submit_composite_job(event)
         elif http_method == 'GET' and '/tasks' in path:
             path_parts = path.rstrip('/').split('/')
             if path_parts[-1] == 'tasks':
@@ -530,8 +532,8 @@ def handler(event, context):
         }
 
 
-def submit_job(event):
-    """Submit processing job to Batch"""
+def submit_indices_job(event):
+    """Submit vegetation indices processing job to Batch"""
     try:
         body = json.loads(event.get('body', '{}'))
         
@@ -593,6 +595,113 @@ def submit_job(event):
         }
     except Exception as e:
         logger.error(f"Submit job error: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': str(e)})
+        }
+
+
+def submit_composite_job(event):
+    """
+    Submit temporal composite job to Batch.
+
+    Expected body:
+    {
+        "satellite": "sentinel-2",
+        "date_range": {"start": "2024-01-01", "end": "2024-12-31"},
+        "aoi": { GeoJSON },
+        "composite_mode": "monthly",
+        "apply_cloud_mask": true,
+        "indices": ["NDVI"],           // optional: compute indices on composites
+        "image_urls": ["https://..."],  // band URLs for each image
+        "image_timestamps": ["2024-01-05T00:00:00Z", ...],
+        "qa_band_urls": ["https://...", ...]  // optional: QA band per image
+    }
+    """
+    try:
+        body = json.loads(event.get('body', '{}'))
+        body = convert_floats_to_decimal(body)
+
+        logger.info(f"Submitting composite job: {json.dumps(body, default=str)}")
+
+        # Validate required fields
+        if not body.get('image_urls'):
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({'error': 'image_urls is required'})
+            }
+        if not body.get('image_timestamps'):
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({'error': 'image_timestamps is required'})
+            }
+        if not body.get('aoi'):
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({'error': 'aoi is required'})
+            }
+
+        # Add task_type for the batch processor
+        body['task_type'] = 'composite'
+
+        task = ProcessingTask(
+            task_id="",
+            task_type="composite",
+            status="queued",
+            progress=0,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            parameters=body
+        )
+
+        task_repository = get_task_repository()
+        task_id = task_repository.create_task(task)
+        task.task_id = task_id
+
+        logger.info(f"Created composite task in DynamoDB: {task_id}")
+
+        # Composite jobs may take longer — give 2 hours
+        batch_manager = get_batch_manager()
+        batch_job_id = batch_manager.submit_job(
+            task_id=task_id,
+            parameters=body,
+            job_name=f"composite-{task_id}",
+            retry_attempts=2,
+            timeout_seconds=7200
+        )
+
+        logger.info(f"Submitted Batch composite job: {batch_job_id}")
+
+        task_repository.update_task_status(
+            task_id=task_id,
+            status="queued",
+            batch_job_id=batch_job_id,
+            batch_job_status="SUBMITTED"
+        )
+
+        num_images = len(body.get('image_urls', []))
+        estimated_time = max(60, num_images * 20)
+
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'task_id': task_id,
+                'task_type': 'composite',
+                'status': 'queued',
+                'batch_job_id': batch_job_id,
+                'created_at': task.created_at.isoformat(),
+                'composite_mode': body.get('composite_mode', 'monthly'),
+                'num_images': num_images,
+                'estimated_time': estimated_time
+            })
+        }
+    except Exception as e:
+        logger.error(f"Submit composite job error: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
             'headers': cors_headers(),

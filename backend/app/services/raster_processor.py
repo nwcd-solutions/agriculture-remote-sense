@@ -382,3 +382,80 @@ class RasterProcessor:
             pass
         
         return info
+
+    def apply_cloud_mask(
+        self,
+        data: xr.DataArray,
+        qa_band: xr.DataArray,
+        satellite: str = "sentinel-2"
+    ) -> xr.DataArray:
+        """
+        应用云和质量掩膜到光学卫星数据
+        
+        支持 Sentinel-2 SCL (Scene Classification Layer) 和
+        Landsat 8 QA_PIXEL 质量波段。
+        
+        被掩膜的像素设为 NaN，以便在时间合成时被排除。
+        
+        Args:
+            data: 输入栅格数据
+            qa_band: 质量波段数据
+            satellite: 卫星类型 ("sentinel-2" 或 "landsat-8")
+            
+        Returns:
+            xr.DataArray: 应用掩膜后的数据（云像素为 NaN）
+            
+        Raises:
+            ValueError: 如果卫星类型不支持或数据形状不匹配
+        """
+        if satellite not in ("sentinel-2", "landsat-8"):
+            raise ValueError(f"Cloud masking not supported for satellite: {satellite}")
+
+        # 获取 QA 值的 numpy 数组
+        qa_values = qa_band.values
+        # 如果 qa_band 有 band 维度，取第一个
+        if qa_values.ndim == 3:
+            qa_values = qa_values[0]
+
+        if satellite == "sentinel-2":
+            # Sentinel-2 SCL (Scene Classification Layer) 分类值:
+            #   0: No Data
+            #   1: Saturated or defective
+            #   2: Dark area pixels (topographic shadows)
+            #   3: Cloud shadows
+            #   6: Water
+            #   8: Cloud medium probability
+            #   9: Cloud high probability
+            #  10: Thin cirrus
+            #  11: Snow/Ice
+            # 保留: 4 (Vegetation), 5 (Not vegetated), 7 (Unclassified)
+            bad_classes = {0, 1, 3, 8, 9, 10}
+            cloud_mask = np.isin(qa_values, list(bad_classes))
+        else:
+            # Landsat 8 QA_PIXEL 位掩码:
+            #   Bit 1: Dilated Cloud
+            #   Bit 3: Cloud
+            #   Bit 4: Cloud Shadow
+            # 如果这些位中任何一个为 1，则标记为云
+            cloud_bit = 1 << 3       # bit 3: Cloud
+            shadow_bit = 1 << 4      # bit 4: Cloud Shadow
+            dilated_bit = 1 << 1     # bit 1: Dilated Cloud
+            qa_int = qa_values.astype(np.uint16)
+            cloud_mask = (
+                ((qa_int & cloud_bit) != 0) |
+                ((qa_int & shadow_bit) != 0) |
+                ((qa_int & dilated_bit) != 0)
+            )
+
+        # 将 data 转为 float（如果还不是）以支持 NaN
+        masked = data.astype(np.float32).copy()
+
+        # 广播掩膜到数据维度
+        if masked.values.ndim == 3:
+            # (band, y, x) — 对每个 band 应用同一个 (y, x) 掩膜
+            for i in range(masked.values.shape[0]):
+                masked.values[i][cloud_mask] = np.nan
+        else:
+            masked.values[cloud_mask] = np.nan
+
+        return masked

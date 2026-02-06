@@ -1,5 +1,11 @@
 """
 STAC API 查询服务
+
+支持多卫星数据源查询：
+- Sentinel-1: GRD, RTC 产品 (VV/VH 极化)
+- Sentinel-2: L1C, L2A 处理级别
+- Landsat 8: Collection 2 Level-1, Level-2
+- MODIS: Terra/Aqua 反射率及植被产品
 """
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -8,6 +14,42 @@ from pystac import Item
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Sentinel-1 collection 映射
+SENTINEL1_COLLECTIONS = {
+    "GRD": "sentinel-1-grd",
+    "RTC": "sentinel-1-rtc",
+}
+
+# Sentinel-2 collection 映射
+SENTINEL2_COLLECTIONS = {
+    "L1C": "sentinel-2-l1c",
+    "L2A": "sentinel-2-l2a",
+}
+
+# Landsat 8 Collection 2 映射
+LANDSAT8_COLLECTIONS = {
+    "L1": "landsat-c2-l1",
+    "L2": "landsat-c2-l2",
+}
+
+# MODIS 产品映射 (Terra 和 Aqua)
+MODIS_COLLECTIONS = {
+    # Terra 反射率
+    "MOD09A1": "modis-mod09a1",
+    # Aqua 反射率
+    "MYD09A1": "modis-myd09a1",
+    # Combined 反射率 (BRDF)
+    "MCD43A4": "modis-mcd43a4",
+    # Terra 植被指数
+    "MOD13A1": "modis-mod13a1",
+    # Aqua 植被指数
+    "MYD13A1": "modis-myd13a1",
+    # Terra 地表温度
+    "MOD11A1": "modis-mod11a1",
+    # Aqua 地表温度
+    "MYD11A1": "modis-myd11a1",
+}
 
 
 class STACQueryService:
@@ -67,25 +109,24 @@ class STACQueryService:
             client = self._get_client()
             bbox = self._geojson_to_bbox(aoi)
             
-            # 构建查询参数
+            collection = SENTINEL2_COLLECTIONS.get(
+                product_level.upper(), f"sentinel-2-{product_level.lower()}"
+            )
+            
             search_params = {
-                "collections": [f"sentinel-2-{product_level.lower()}"],
+                "collections": [collection],
                 "bbox": bbox,
                 "datetime": f"{date_range['start'].isoformat()}/{date_range['end'].isoformat()}",
                 "max_items": 100,
             }
             
-            # 添加云量过滤
             if cloud_cover_max is not None:
                 search_params["query"] = {
-                    "eo:cloud_cover": {
-                        "lte": cloud_cover_max
-                    }
+                    "eo:cloud_cover": {"lte": cloud_cover_max}
                 }
             
             logger.info(f"Searching Sentinel-2 {product_level} with params: {search_params}")
             
-            # 执行搜索
             search = client.search(**search_params)
             items = list(search.items())
             
@@ -101,15 +142,17 @@ class STACQueryService:
         aoi: Dict[str, Any],
         date_range: Dict[str, datetime],
         product_type: str = "GRD",
+        polarization: Optional[List[str]] = None,
         **kwargs
     ) -> List[Item]:
         """
-        查询 Sentinel-1 数据
+        查询 Sentinel-1 数据，支持 GRD 和 RTC 产品，VV/VH 极化
         
         Args:
             aoi: GeoJSON 格式的感兴趣区域
             date_range: 时间范围
             product_type: 产品类型，GRD 或 RTC
+            polarization: 极化方式列表，如 ["VV", "VH"]
             **kwargs: 其他查询参数
             
         Returns:
@@ -119,8 +162,9 @@ class STACQueryService:
             client = self._get_client()
             bbox = self._geojson_to_bbox(aoi)
             
-            # Sentinel-1 collection ID
-            collection = "sentinel-1-grd" if product_type == "GRD" else "sentinel-1-rtc"
+            collection = SENTINEL1_COLLECTIONS.get(
+                product_type.upper(), "sentinel-1-grd"
+            )
             
             search_params = {
                 "collections": [collection],
@@ -128,6 +172,12 @@ class STACQueryService:
                 "datetime": f"{date_range['start'].isoformat()}/{date_range['end'].isoformat()}",
                 "max_items": 100,
             }
+            
+            # 添加极化过滤 (通过 sar:polarizations 属性)
+            if polarization:
+                search_params["query"] = {
+                    "sar:polarizations": {"eq": polarization}
+                }
             
             logger.info(f"Searching Sentinel-1 {product_type} with params: {search_params}")
             
@@ -149,12 +199,12 @@ class STACQueryService:
         product_level: str = "L2"
     ) -> List[Item]:
         """
-        查询 Landsat 8 数据
+        查询 Landsat 8 Collection 2 数据，支持 Level-1 和 Level-2
         
         Args:
             aoi: GeoJSON 格式的感兴趣区域
             date_range: 时间范围
-            cloud_cover_max: 最大云量百分比
+            cloud_cover_max: 最大云量百分比 (CLOUD_COVER 字段)
             product_level: 产品级别，L1 或 L2
             
         Returns:
@@ -164,8 +214,9 @@ class STACQueryService:
             client = self._get_client()
             bbox = self._geojson_to_bbox(aoi)
             
-            # Landsat collection ID
-            collection = f"landsat-c2-{product_level.lower()}"
+            collection = LANDSAT8_COLLECTIONS.get(
+                product_level.upper(), f"landsat-c2-{product_level.lower()}"
+            )
             
             search_params = {
                 "collections": [collection],
@@ -174,12 +225,9 @@ class STACQueryService:
                 "max_items": 100,
             }
             
-            # 添加云量过滤
             if cloud_cover_max is not None:
                 search_params["query"] = {
-                    "eo:cloud_cover": {
-                        "lte": cloud_cover_max
-                    }
+                    "eo:cloud_cover": {"lte": cloud_cover_max}
                 }
             
             logger.info(f"Searching Landsat 8 {product_level} with params: {search_params}")
@@ -201,7 +249,16 @@ class STACQueryService:
         product: str = "MCD43A4"
     ) -> List[Item]:
         """
-        查询 MODIS 数据
+        查询 MODIS 数据，支持 Terra 和 Aqua 产品
+        
+        支持的产品:
+        - MOD09A1: Terra 反射率 (8天合成)
+        - MYD09A1: Aqua 反射率 (8天合成)
+        - MCD43A4: Combined BRDF 反射率
+        - MOD13A1: Terra 植被指数 (16天)
+        - MYD13A1: Aqua 植被指数 (16天)
+        - MOD11A1: Terra 地表温度
+        - MYD11A1: Aqua 地表温度
         
         Args:
             aoi: GeoJSON 格式的感兴趣区域
@@ -215,8 +272,12 @@ class STACQueryService:
             client = self._get_client()
             bbox = self._geojson_to_bbox(aoi)
             
+            collection = MODIS_COLLECTIONS.get(
+                product.upper(), f"modis-{product.lower()}"
+            )
+            
             search_params = {
-                "collections": [f"modis-{product.lower()}"],
+                "collections": [collection],
                 "bbox": bbox,
                 "datetime": f"{date_range['start'].isoformat()}/{date_range['end'].isoformat()}",
                 "max_items": 100,

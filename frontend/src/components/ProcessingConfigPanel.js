@@ -1,278 +1,240 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Checkbox, Button, Space, Form, Progress, Alert, Typography, Divider, Tag, Tooltip } from 'antd';
+import React, { useState } from 'react';
+import { Card, Checkbox, Button, Space, Form, Progress, Alert, Typography, Divider, Tag, Switch, Radio } from 'antd';
 import { ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, StopOutlined, SyncOutlined } from '@ant-design/icons';
 import './ProcessingConfigPanel.css';
 
 const { Text, Link } = Typography;
 
 /**
- * 处理配置面板组件 - 处理参数配置
- * 
- * 属性：
- * - availableIndices: 可用植被指数列表
- * - onProcess: 处理提交回调函数
- * - selectedImage: 当前选中的影像
- * - processingTask: 当前处理任务状态
- * - disabled: 是否禁用
- * - onCancelTask: 取消任务回调函数
- * - onRefreshTask: 刷新任务状态回调函数
+ * 处理配置面板组件
+ *
+ * 支持两种处理模式：
+ * 1. 植被指数计算 — 对单张影像计算 NDVI/SAVI/EVI/VGI
+ * 2. 时间合成 — 对查询结果中的多张影像按月度合成
  */
-const ProcessingConfigPanel = ({ 
+const ProcessingConfigPanel = ({
   availableIndices = ['NDVI', 'SAVI', 'EVI', 'VGI'],
   onProcess,
+  onComposite,
   selectedImage = null,
+  queryResults = [],
   processingTask = null,
   disabled = false,
   onCancelTask,
-  onRefreshTask
+  onRefreshTask,
+  aoi = null,
+  satelliteType = 'sentinel-2',
 }) => {
   const [form] = Form.useForm();
   const [selectedIndices, setSelectedIndices] = useState(['NDVI']);
+  const [processingMode, setProcessingMode] = useState('indices'); // 'indices' | 'composite'
+  const [compositeMode, setCompositeMode] = useState('monthly');
+  const [applyCloudMask, setApplyCloudMask] = useState(true);
 
-  // 植被指数信息
   const indicesInfo = {
-    NDVI: {
-      name: 'NDVI',
-      fullName: '归一化植被指数',
-      formula: '(NIR - Red) / (NIR + Red)',
-      description: '最常用的植被指数，用于评估植被健康状况'
-    },
-    SAVI: {
-      name: 'SAVI',
-      fullName: '土壤调节植被指数',
-      formula: '(1 + L) * (NIR - Red) / (NIR + Red + L)',
-      description: '考虑土壤背景影响的植被指数，L=0.5'
-    },
-    EVI: {
-      name: 'EVI',
-      fullName: '增强植被指数',
-      formula: '2.5 * (NIR - Red) / (NIR + 6*Red - 7.5*Blue + 1)',
-      description: '改进的植被指数，减少大气和土壤影响'
-    },
-    VGI: {
-      name: 'VGI',
-      fullName: '可见光植被指数',
-      formula: 'Green / Red',
-      description: '基于可见光波段的简单植被指数'
-    }
+    NDVI: { name: 'NDVI', fullName: '归一化植被指数', description: '最常用的植被指数，评估植被健康状况' },
+    SAVI: { name: 'SAVI', fullName: '土壤调节植被指数', description: '考虑土壤背景影响，L=0.5' },
+    EVI:  { name: 'EVI',  fullName: '增强植被指数',     description: '减少大气和土壤影响' },
+    VGI:  { name: 'VGI',  fullName: '可见光植被指数',   description: '基于可见光波段的简单指数' },
   };
 
-  // 处理指数选择变化
-  const handleIndicesChange = (checkedValues) => {
-    setSelectedIndices(checkedValues);
-  };
+  // 是否为光学卫星（支持云掩膜）
+  const isOpticalSatellite = ['sentinel-2', 'landsat-8'].includes(satelliteType);
 
-  // 处理提交
-  const handleSubmit = () => {
-    if (!selectedImage) {
-      return;
-    }
-
-    if (selectedIndices.length === 0) {
-      return;
-    }
-
+  // 提交植被指数处理
+  const handleSubmitIndices = () => {
+    if (!selectedImage || selectedIndices.length === 0) return;
     if (onProcess) {
-      onProcess({
-        image: selectedImage,
-        indices: selectedIndices
+      onProcess({ image: selectedImage, indices: selectedIndices });
+    }
+  };
+
+  // 提交时间合成
+  const handleSubmitComposite = () => {
+    if (!queryResults || queryResults.length === 0) return;
+    if (!aoi) return;
+    if (onComposite) {
+      onComposite({
+        results: queryResults,
+        compositeMode,
+        applyCloudMask: isOpticalSatellite ? applyCloudMask : false,
+        satellite: satelliteType,
+        indices: selectedIndices,
+        aoi,
       });
     }
   };
 
-  // 获取任务进度
-  const getTaskProgress = () => {
-    if (!processingTask) return 0;
-    return processingTask.progress || 0;
+  const handleSubmit = () => {
+    if (processingMode === 'indices') {
+      handleSubmitIndices();
+    } else {
+      handleSubmitComposite();
+    }
   };
 
-  // 获取任务状态文本
+  // --- Task status helpers (unchanged) ---
+  const getTaskProgress = () => processingTask?.progress || 0;
   const getTaskStatusText = () => {
     if (!processingTask) return '';
-    
-    switch (processingTask.status) {
-      case 'queued':
-        return '任务已创建，等待处理...';
-      case 'running':
-        return '正在处理中...';
-      case 'completed':
-        return '处理完成！';
-      case 'failed':
-        return '处理失败';
-      default:
-        return '';
-    }
+    const map = { queued: '任务已创建，等待处理...', running: '正在处理中...', completed: '处理完成！', failed: '处理失败' };
+    return map[processingTask.status] || '';
   };
-
-  // 获取 Batch 状态文本
   const getBatchStatusText = () => {
-    if (!processingTask || !processingTask.batch_job_status) return '';
-    
-    const statusMap = {
-      'SUBMITTED': '已提交',
-      'PENDING': '等待中',
-      'RUNNABLE': '可运行',
-      'STARTING': '启动中',
-      'RUNNING': '运行中',
-      'SUCCEEDED': '成功',
-      'FAILED': '失败'
-    };
-    
-    return statusMap[processingTask.batch_job_status] || processingTask.batch_job_status;
+    if (!processingTask?.batch_job_status) return '';
+    const map = { SUBMITTED: '已提交', PENDING: '等待中', RUNNABLE: '可运行', STARTING: '启动中', RUNNING: '运行中', SUCCEEDED: '成功', FAILED: '失败' };
+    return map[processingTask.batch_job_status] || processingTask.batch_job_status;
   };
-
-  // 获取 Batch 状态颜色
   const getBatchStatusColor = () => {
-    if (!processingTask || !processingTask.batch_job_status) return 'default';
-    
-    const colorMap = {
-      'SUBMITTED': 'blue',
-      'PENDING': 'blue',
-      'RUNNABLE': 'cyan',
-      'STARTING': 'processing',
-      'RUNNING': 'processing',
-      'SUCCEEDED': 'success',
-      'FAILED': 'error'
-    };
-    
-    return colorMap[processingTask.batch_job_status] || 'default';
+    if (!processingTask?.batch_job_status) return 'default';
+    const map = { SUBMITTED: 'blue', PENDING: 'blue', RUNNABLE: 'cyan', STARTING: 'processing', RUNNING: 'processing', SUCCEEDED: 'success', FAILED: 'error' };
+    return map[processingTask.batch_job_status] || 'default';
   };
-
-  // 获取进度条状态
   const getProgressStatus = () => {
     if (!processingTask) return 'normal';
-    
-    switch (processingTask.status) {
-      case 'completed':
-        return 'success';
-      case 'failed':
-        return 'exception';
-      case 'running':
-        return 'active';
-      default:
-        return 'normal';
+    const map = { completed: 'success', failed: 'exception', running: 'active' };
+    return map[processingTask.status] || 'normal';
+  };
+  const canCancelTask = () => processingTask && ['queued', 'running'].includes(processingTask.status);
+  const isTaskActive = () => processingTask && ['queued', 'running'].includes(processingTask.status);
+
+  // 提交按钮是否可用
+  const canSubmit = () => {
+    if (disabled || isTaskActive()) return false;
+    if (processingMode === 'indices') {
+      return selectedImage && selectedIndices.length > 0;
     }
-  };
-
-  // 处理取消任务
-  const handleCancelTask = () => {
-    if (onCancelTask && processingTask) {
-      onCancelTask(processingTask.task_id);
-    }
-  };
-
-  // 处理刷新任务状态
-  const handleRefreshTask = () => {
-    if (onRefreshTask && processingTask) {
-      onRefreshTask(processingTask.task_id);
-    }
-  };
-
-  // 判断任务是否可以取消
-  const canCancelTask = () => {
-    if (!processingTask) return false;
-    return processingTask.status === 'queued' || processingTask.status === 'running';
-  };
-
-  // 判断任务是否正在进行
-  const isTaskActive = () => {
-    if (!processingTask) return false;
-    return processingTask.status === 'queued' || processingTask.status === 'running';
+    return queryResults.length > 0 && aoi;
   };
 
   return (
-    <Card 
-      title="植被指数处理" 
+    <Card
+      title="数据处理"
       className="processing-config-panel"
       bordered={false}
     >
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-      >
-        {/* 选中影像信息 */}
-        {selectedImage ? (
-          <Alert
-            message="已选择影像"
-            description={
-              <div>
-                <Text ellipsis style={{ maxWidth: '100%', display: 'block' }}>
-                  {selectedImage.id}
-                </Text>
-                <Text type="secondary" style={{ fontSize: '12px' }}>
-                  {selectedImage.satellite} - {selectedImage.product_level}
-                </Text>
-              </div>
-            }
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        ) : (
-          <Alert
-            message="请先选择影像"
-            description="在查询结果中点击影像以选择"
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
 
-        {/* 植被指数多选框 */}
-        <Form.Item 
-          label="选择植被指数"
-          name="indices"
-          initialValue={selectedIndices}
-        >
-          <Checkbox.Group
-            value={selectedIndices}
-            onChange={handleIndicesChange}
-            style={{ width: '100%' }}
-            disabled={disabled || !selectedImage}
+        {/* 处理模式切换 */}
+        <Form.Item label="处理模式">
+          <Radio.Group
+            value={processingMode}
+            onChange={(e) => setProcessingMode(e.target.value)}
+            disabled={disabled || isTaskActive()}
+            buttonStyle="solid"
+            size="small"
           >
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {availableIndices.map(index => (
-                <div key={index} className="index-option">
-                  <Checkbox value={index}>
-                    <div className="index-info">
-                      <Text strong>{indicesInfo[index]?.name}</Text>
-                      <Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>
-                        {indicesInfo[index]?.fullName}
-                      </Text>
-                      <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: 4 }}>
-                        {indicesInfo[index]?.description}
-                      </Text>
-                    </div>
-                  </Checkbox>
-                </div>
-              ))}
-            </Space>
-          </Checkbox.Group>
+            <Radio.Button value="indices">植被指数</Radio.Button>
+            <Radio.Button value="composite">时间合成</Radio.Button>
+          </Radio.Group>
         </Form.Item>
 
-        {/* 处理提交按钮 */}
+        {/* ========== 植被指数模式 ========== */}
+        {processingMode === 'indices' && (
+          <>
+            {selectedImage ? (
+              <Alert
+                message="已选择影像"
+                description={
+                  <div>
+                    <Text ellipsis style={{ maxWidth: '100%', display: 'block' }}>{selectedImage.id}</Text>
+                    <Text type="secondary" style={{ fontSize: '12px' }}>{selectedImage.satellite} - {selectedImage.product_level}</Text>
+                  </div>
+                }
+                type="info" showIcon style={{ marginBottom: 16 }}
+              />
+            ) : (
+              <Alert message="请先选择影像" description="在查询结果中点击影像以选择" type="warning" showIcon style={{ marginBottom: 16 }} />
+            )}
+
+            <Form.Item label="选择植被指数">
+              <Checkbox.Group
+                value={selectedIndices}
+                onChange={(v) => setSelectedIndices(v)}
+                style={{ width: '100%' }}
+                disabled={disabled || !selectedImage}
+              >
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {availableIndices.map(idx => (
+                    <div key={idx} className="index-option">
+                      <Checkbox value={idx}>
+                        <div className="index-info">
+                          <Text strong>{indicesInfo[idx]?.name}</Text>
+                          <Text type="secondary" style={{ fontSize: '12px', display: 'block' }}>{indicesInfo[idx]?.fullName}</Text>
+                          <Text type="secondary" style={{ fontSize: '11px', display: 'block', marginTop: 2 }}>{indicesInfo[idx]?.description}</Text>
+                        </div>
+                      </Checkbox>
+                    </div>
+                  ))}
+                </Space>
+              </Checkbox.Group>
+            </Form.Item>
+          </>
+        )}
+
+        {/* ========== 时间合成模式 ========== */}
+        {processingMode === 'composite' && (
+          <>
+            <Alert
+              message={`查询结果: ${queryResults.length} 张影像`}
+              description={queryResults.length > 0
+                ? '将对查询结果中的所有影像进行时间合成'
+                : '请先执行数据查询获取影像列表'}
+              type={queryResults.length > 0 ? 'info' : 'warning'}
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+
+            <Form.Item label="合成周期">
+              <Radio.Group
+                value={compositeMode}
+                onChange={(e) => setCompositeMode(e.target.value)}
+                disabled={disabled}
+              >
+                <Radio value="monthly">月度合成</Radio>
+              </Radio.Group>
+            </Form.Item>
+
+            {isOpticalSatellite && (
+              <Form.Item label="云掩膜">
+                <Space>
+                  <Switch
+                    checked={applyCloudMask}
+                    onChange={(v) => setApplyCloudMask(v)}
+                    disabled={disabled}
+                  />
+                  <Text type="secondary" style={{ fontSize: '12px' }}>
+                    {applyCloudMask ? '合成前去除云覆盖像素' : '不应用云掩膜'}
+                  </Text>
+                </Space>
+              </Form.Item>
+            )}
+          </>
+        )}
+
+        <Divider style={{ margin: '8px 0 16px' }} />
+
+        {/* 提交按钮 */}
         <Form.Item>
           <Button
             type="primary"
             icon={<ThunderboltOutlined />}
             onClick={handleSubmit}
-            disabled={disabled || !selectedImage || selectedIndices.length === 0 || isTaskActive()}
+            disabled={!canSubmit()}
             loading={isTaskActive()}
             block
           >
-            {isTaskActive() 
-              ? '处理中...' 
-              : '开始处理'}
+            {isTaskActive()
+              ? '处理中...'
+              : processingMode === 'indices' ? '计算植被指数' : '开始时间合成'}
           </Button>
         </Form.Item>
 
-        {/* 任务进度条 */}
+        {/* ========== 任务进度 ========== */}
         {processingTask && (
           <div className="task-progress">
             <Divider style={{ margin: '12px 0' }} />
             <Space direction="vertical" style={{ width: '100%' }} size="middle">
-              {/* 任务 ID 和 Batch Job ID */}
               <div className="task-ids">
                 <Space direction="vertical" size="small" style={{ width: '100%' }}>
                   <div>
@@ -281,105 +243,59 @@ const ProcessingConfigPanel = ({
                   </div>
                   {processingTask.batch_job_id && (
                     <div>
-                      <Text type="secondary" style={{ fontSize: '12px' }}>Batch Job ID: </Text>
+                      <Text type="secondary" style={{ fontSize: '12px' }}>Batch Job: </Text>
                       <Text code style={{ fontSize: '11px' }}>{processingTask.batch_job_id}</Text>
+                    </div>
+                  )}
+                  {processingTask.task_type === 'composite' && (
+                    <div>
+                      <Tag color="purple">时间合成</Tag>
                     </div>
                   )}
                 </Space>
               </div>
 
-              {/* 任务状态和 Batch 状态 */}
               <div className="task-status">
                 <Space>
-                  {processingTask.status === 'completed' && (
-                    <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
-                  )}
-                  {processingTask.status === 'failed' && (
-                    <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
-                  )}
-                  {isTaskActive() && (
-                    <SyncOutlined spin style={{ color: '#1890ff', fontSize: 16 }} />
-                  )}
+                  {processingTask.status === 'completed' && <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />}
+                  {processingTask.status === 'failed' && <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />}
+                  {isTaskActive() && <SyncOutlined spin style={{ color: '#1890ff', fontSize: 16 }} />}
                   <Text strong>{getTaskStatusText()}</Text>
-                  {processingTask.batch_job_status && (
-                    <Tag color={getBatchStatusColor()}>
-                      {getBatchStatusText()}
-                    </Tag>
-                  )}
+                  {processingTask.batch_job_status && <Tag color={getBatchStatusColor()}>{getBatchStatusText()}</Tag>}
                 </Space>
               </div>
-              
-              {/* 进度条 */}
-              <Progress 
-                percent={getTaskProgress()} 
-                status={getProgressStatus()}
-                strokeColor={{
-                  '0%': '#108ee9',
-                  '100%': '#87d068',
-                }}
-              />
 
-              {/* 操作按钮 */}
+              <Progress percent={getTaskProgress()} status={getProgressStatus()} strokeColor={{ '0%': '#108ee9', '100%': '#87d068' }} />
+
               <Space style={{ width: '100%' }}>
                 {canCancelTask() && (
-                  <Button
-                    danger
-                    size="small"
-                    icon={<StopOutlined />}
-                    onClick={handleCancelTask}
-                  >
-                    取消任务
-                  </Button>
+                  <Button danger size="small" icon={<StopOutlined />} onClick={() => onCancelTask?.(processingTask.task_id)}>取消任务</Button>
                 )}
-                <Button
-                  size="small"
-                  icon={<SyncOutlined />}
-                  onClick={handleRefreshTask}
-                  disabled={!processingTask.task_id}
-                >
-                  刷新状态
-                </Button>
+                <Button size="small" icon={<SyncOutlined />} onClick={() => onRefreshTask?.(processingTask.task_id)} disabled={!processingTask.task_id}>刷新状态</Button>
               </Space>
 
-              {/* 错误信息 */}
               {processingTask.status === 'failed' && processingTask.error && (
-                <Alert
-                  message="错误信息"
-                  description={processingTask.error}
-                  type="error"
-                  showIcon
-                  closable
-                />
+                <Alert message="错误信息" description={processingTask.error} type="error" showIcon closable />
               )}
 
-              {/* 完成信息和下载链接 */}
               {processingTask.status === 'completed' && processingTask.result && (
                 <Alert
                   message="处理完成"
                   description={
                     <Space direction="vertical" size="small" style={{ width: '100%' }}>
                       <Text>已生成 {processingTask.result.output_files?.length || 0} 个文件</Text>
-                      {processingTask.result.output_files && processingTask.result.output_files.length > 0 && (
-                        <div className="output-files">
-                          {processingTask.result.output_files.map((file, index) => (
-                            <div key={index} style={{ marginTop: 8 }}>
-                              <Space>
-                                <Text strong>{file.index || file.name}</Text>
-                                <Text type="secondary">({file.size_mb} MB)</Text>
-                                {file.download_url && (
-                                  <Link href={file.download_url} target="_blank" download>
-                                    下载
-                                  </Link>
-                                )}
-                              </Space>
-                            </div>
-                          ))}
+                      {processingTask.result.output_files?.map((file, i) => (
+                        <div key={i} style={{ marginTop: 8 }}>
+                          <Space>
+                            <Text strong>{file.index || file.name}</Text>
+                            <Text type="secondary">({file.size_mb} MB)</Text>
+                            {file.download_url && <Link href={file.download_url} target="_blank" download>下载</Link>}
+                          </Space>
                         </div>
-                      )}
+                      ))}
                     </Space>
                   }
-                  type="success"
-                  showIcon
+                  type="success" showIcon
                 />
               )}
             </Space>

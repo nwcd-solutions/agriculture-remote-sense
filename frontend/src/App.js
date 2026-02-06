@@ -239,8 +239,85 @@ function App() {
   // 处理下载
   const handleDownload = useCallback((image) => {
     console.log('下载影像:', image);
-    // 未来实现：调用下载 API 或直接下载文件
   }, []);
+
+  // 处理时间合成
+  const handleComposite = useCallback(async ({ results, compositeMode, applyCloudMask, satellite, indices, aoi: compositeAoi }) => {
+    setProcessingLoading(true);
+    setProcessingTask(null);
+
+    try {
+      // 从查询结果中提取影像 URL 和时间戳
+      // 对于 Sentinel-2，使用 visual 或 nir 波段作为合成输入
+      const imageUrls = [];
+      const imageTimestamps = [];
+      const qaBandUrls = [];
+
+      for (const img of results) {
+        // 找到一个可用的波段 URL
+        let bandUrl = null;
+        const assets = img.assets || {};
+        // 优先使用 nir 波段，其次 red，最后 visual
+        for (const key of ['nir', 'nir08', 'red', 'B04', 'visual']) {
+          if (assets[key]?.href) {
+            bandUrl = assets[key].href;
+            break;
+          }
+        }
+        if (!bandUrl) continue;
+
+        imageUrls.push(bandUrl);
+        imageTimestamps.push(img.datetime);
+
+        // QA 波段 URL（用于云掩膜）
+        let qaUrl = null;
+        if (applyCloudMask) {
+          if (satellite === 'sentinel-2' && assets['SCL']?.href) {
+            qaUrl = assets['SCL'].href;
+          } else if (satellite === 'landsat-8' && assets['qa_pixel']?.href) {
+            qaUrl = assets['qa_pixel'].href;
+          }
+        }
+        qaBandUrls.push(qaUrl);
+      }
+
+      if (imageUrls.length === 0) {
+        message.error('没有可用的影像 URL');
+        setProcessingLoading(false);
+        return;
+      }
+
+      const requestData = {
+        satellite,
+        composite_mode: compositeMode,
+        apply_cloud_mask: applyCloudMask,
+        aoi: compositeAoi,
+        image_urls: imageUrls,
+        image_timestamps: imageTimestamps,
+        qa_band_urls: qaBandUrls,
+        indices,
+      };
+
+      console.log('提交时间合成:', requestData);
+
+      const response = await axios.post('/api/process/composite', requestData);
+
+      if (response.data?.task_id) {
+        setProcessingTask({
+          task_id: response.data.task_id,
+          task_type: 'composite',
+          status: response.data.status,
+          progress: 0,
+        });
+        startPolling(response.data.task_id);
+      }
+    } catch (error) {
+      console.error('时间合成提交失败:', error);
+      message.error(error.response?.data?.error || '时间合成提交失败');
+    } finally {
+      setProcessingLoading(false);
+    }
+  }, [startPolling]);
 
   // 取消任务
   const handleCancelTask = useCallback(async (taskId) => {
@@ -295,7 +372,7 @@ function App() {
             className="app-sider"
           >
             <DataQueryPanel
-              satellites={['sentinel-2']}
+              satellites={['sentinel-2', 'sentinel-1', 'landsat-8', 'modis']}
               onQuery={handleQuery}
               aoi={aoi}
               loading={queryLoading}
@@ -335,11 +412,15 @@ function App() {
                 <ProcessingConfigPanel
                   availableIndices={['NDVI', 'SAVI', 'EVI', 'VGI']}
                   onProcess={handleProcess}
+                  onComposite={handleComposite}
                   selectedImage={selectedImage}
+                  queryResults={queryResults}
                   processingTask={processingTask}
                   disabled={processingLoading}
                   onCancelTask={handleCancelTask}
                   onRefreshTask={handleRefreshTask}
+                  aoi={aoi}
+                  satelliteType={selectedImage?.satellite || 'sentinel-2'}
                 />
               </div>
             </div>

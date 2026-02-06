@@ -56,6 +56,16 @@ def get_processing_service():
     from .processing_service import ProcessingService
     return ProcessingService
 
+def get_cleanup_service():
+    """延迟导入清理服务"""
+    from .cleanup_service import CleanupService, CleanupResult
+    return CleanupService, CleanupResult
+
+def get_temporal_compositor():
+    """延迟导入时间合成处理器"""
+    from .temporal_compositor import TemporalCompositor
+    return TemporalCompositor
+
 __all__ = [
     "get_batch_manager",
     "get_s3_service",
@@ -66,4 +76,6 @@ __all__ = [
     "get_raster_processor",
     "get_vegetation_calculator",
     "get_processing_service",
+    "get_cleanup_service",
+    "get_temporal_compositor",
 ]

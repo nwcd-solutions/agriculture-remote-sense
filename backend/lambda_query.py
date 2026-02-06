@@ -116,9 +116,10 @@ def query_satellite_data(event):
     # Other parameters
     cloud_cover_max = body.get('cloud_cover_max') or body.get('cloud_cover', 100)
     product_level = body.get('product_level')
+    polarization = body.get('polarization')  # For Sentinel-1: ["VV", "VH"]
     limit = body.get('limit', 100)
     
-    logger.info(f"Query params: satellite={satellite}, bbox={bbox}, dates={start_date} to {end_date}, cloud={cloud_cover_max}")
+    logger.info(f"Query params: satellite={satellite}, bbox={bbox}, dates={start_date} to {end_date}, cloud={cloud_cover_max}, polarization={polarization}")
     
     # Validate parameters
     if not bbox or len(bbox) != 4:
@@ -136,7 +137,7 @@ def query_satellite_data(event):
         }
     
     # Determine collection based on satellite type
-    collection, query_params = get_collection_config(satellite, product_level, cloud_cover_max)
+    collection, query_params = get_collection_config(satellite, product_level, cloud_cover_max, polarization)
     
     if not collection:
         return {
@@ -200,7 +201,8 @@ def query_satellite_data(event):
                     'start_date': start_date,
                     'end_date': end_date,
                     'cloud_cover_max': cloud_cover_max,
-                    'product_level': product_level
+                    'product_level': product_level,
+                    'polarization': polarization
                 }
             })
         }
@@ -243,8 +245,21 @@ def format_date(date_str: str) -> str:
     return f"{date_str}T00:00:00Z"
 
 
-def get_collection_config(satellite: str, product_level: Optional[str], cloud_cover_max: float) -> tuple:
-    """Get STAC collection name and query parameters based on satellite type"""
+def get_collection_config(satellite: str, product_level: Optional[str], cloud_cover_max: float, polarization: Optional[List[str]] = None) -> tuple:
+    """
+    Get STAC collection name and query parameters based on satellite type.
+    
+    Supported satellites and products:
+    - sentinel-1: GRD (Ground Range Detected), RTC (Radiometric Terrain Corrected)
+      - Polarizations: VV, VH, VV+VH
+    - sentinel-2: L1C (Top-of-Atmosphere), L2A (Surface Reflectance)
+    - landsat-8: L1 (Collection 2 Level-1), L2 (Collection 2 Level-2)
+    - modis: Terra and Aqua products
+      - MOD09A1 (Terra reflectance), MYD09A1 (Aqua reflectance)
+      - MCD43A4 (Combined BRDF reflectance)
+      - MOD13A1 (Terra vegetation), MYD13A1 (Aqua vegetation)
+      - MOD11A1 (Terra LST), MYD11A1 (Aqua LST)
+    """
     
     query_params = {}
     
@@ -256,7 +271,15 @@ def get_collection_config(satellite: str, product_level: Optional[str], cloud_co
             
     elif satellite == 'sentinel-1':
         product_type = (product_level or 'GRD').upper()
-        collection = "sentinel-1-grd" if product_type == "GRD" else "sentinel-1-rtc"
+        collection_map = {
+            "GRD": "sentinel-1-grd",
+            "RTC": "sentinel-1-rtc",
+        }
+        collection = collection_map.get(product_type, "sentinel-1-grd")
+        # Sentinel-1 SAR 数据没有云量概念，不添加云量过滤
+        # 添加极化过滤
+        if polarization:
+            query_params["sar:polarizations"] = {"eq": polarization}
         
     elif satellite == 'landsat-8':
         level = (product_level or 'L2').lower()
@@ -265,8 +288,19 @@ def get_collection_config(satellite: str, product_level: Optional[str], cloud_co
             query_params["eo:cloud_cover"] = {"lt": cloud_cover_max}
             
     elif satellite == 'modis':
-        product = (product_level or 'MCD43A4').lower()
-        collection = f"modis-{product}"
+        product = (product_level or 'MCD43A4').upper()
+        # MODIS 产品映射
+        modis_collections = {
+            "MOD09A1": "modis-mod09a1",     # Terra 反射率
+            "MYD09A1": "modis-myd09a1",     # Aqua 反射率
+            "MCD43A4": "modis-mcd43a4",     # Combined BRDF
+            "MOD13A1": "modis-mod13a1",     # Terra 植被指数
+            "MYD13A1": "modis-myd13a1",     # Aqua 植被指数
+            "MOD11A1": "modis-mod11a1",     # Terra 地表温度
+            "MYD11A1": "modis-myd11a1",     # Aqua 地表温度
+        }
+        collection = modis_collections.get(product, f"modis-{product.lower()}")
+        # MODIS 没有标准的 eo:cloud_cover 字段
         
     else:
         return None, None
@@ -275,38 +309,66 @@ def get_collection_config(satellite: str, product_level: Optional[str], cloud_co
 
 
 def process_stac_item(feature: Dict[str, Any], satellite: str) -> Dict[str, Any]:
-    """Process a STAC item into the response format"""
+    """Process a STAC item into the response format, with satellite-specific metadata"""
     
     props = feature.get('properties', {})
     assets = feature.get('assets', {})
     
-    # Get cloud cover
+    # Get cloud cover (optical sensors only)
     cloud_cover = props.get('eo:cloud_cover')
     
     # Get thumbnail URL
     thumbnail_url = None
-    if 'thumbnail' in assets:
-        thumbnail_url = assets['thumbnail'].get('href')
-    elif 'visual' in assets:
-        thumbnail_url = assets['visual'].get('href')
-    elif 'rendered_preview' in assets:
-        thumbnail_url = assets['rendered_preview'].get('href')
+    for thumb_key in ['thumbnail', 'visual', 'rendered_preview']:
+        if thumb_key in assets:
+            thumbnail_url = assets[thumb_key].get('href')
+            break
     
-    # Get product level
-    product_level = (
-        props.get('s2:product_type') or
-        props.get('processing:level') or
-        props.get('landsat:collection_category')
-    )
+    # Get product level - satellite-specific extraction
+    product_level = None
+    if satellite == 'sentinel-2':
+        product_level = props.get('s2:product_type') or props.get('processing:level')
+    elif satellite == 'sentinel-1':
+        product_level = props.get('sar:product_type') or props.get('s1:product_timeliness')
+    elif satellite == 'landsat-8':
+        product_level = props.get('landsat:collection_category') or props.get('processing:level')
+    elif satellite == 'modis':
+        product_level = props.get('processing:level')
     
-    # Process assets - include commonly used bands
-    important_assets = ['visual', 'thumbnail', 'rendered_preview', 
-                       'B02', 'B03', 'B04', 'B08', 'B8A', 'B11', 'B12',  # Sentinel-2
-                       'SCL', 'AOT', 'WVP',  # Sentinel-2 auxiliary
-                       'red', 'green', 'blue', 'nir08', 'swir16', 'swir22',  # Landsat
-                       'qa_pixel', 'qa_radsat',  # Landsat QA
-                       'vv', 'vh',  # Sentinel-1
-                       ]
+    if not product_level:
+        product_level = (
+            props.get('s2:product_type') or
+            props.get('processing:level') or
+            props.get('landsat:collection_category')
+        )
+    
+    # Satellite-specific important assets
+    important_assets_by_satellite = {
+        'sentinel-2': [
+            'visual', 'thumbnail', 'rendered_preview',
+            'B02', 'B03', 'B04', 'B08', 'B8A', 'B11', 'B12',
+            'blue', 'green', 'red', 'nir', 'nir08',
+            'SCL', 'AOT', 'WVP',
+        ],
+        'sentinel-1': [
+            'thumbnail', 'rendered_preview',
+            'vv', 'vh', 'hh', 'hv',
+        ],
+        'landsat-8': [
+            'visual', 'thumbnail', 'rendered_preview',
+            'red', 'green', 'blue', 'nir08', 'swir16', 'swir22',
+            'coastal', 'lwir11',
+            'qa_pixel', 'qa_radsat', 'qa_aerosol',
+        ],
+        'modis': [
+            'thumbnail', 'rendered_preview',
+            'B01', 'B02', 'B03', 'B04', 'B05', 'B06', 'B07',
+            'Nadir_Reflectance_Band1', 'Nadir_Reflectance_Band2',
+            'Nadir_Reflectance_Band3', 'Nadir_Reflectance_Band4',
+        ],
+    }
+    
+    important_assets = important_assets_by_satellite.get(satellite, [])
     
     processed_assets = {}
     for name, asset in assets.items():
@@ -318,6 +380,45 @@ def process_stac_item(feature: Dict[str, Any], satellite: str) -> Dict[str, Any]
                 'roles': asset.get('roles')
             }
     
+    # Build satellite-specific properties
+    extra_props = {
+        'platform': props.get('platform'),
+        'constellation': props.get('constellation'),
+        'instrument': props.get('instruments'),
+        'gsd': props.get('gsd'),
+    }
+    
+    if satellite == 'sentinel-2':
+        extra_props.update({
+            'view:sun_azimuth': props.get('view:sun_azimuth'),
+            'view:sun_elevation': props.get('view:sun_elevation'),
+            's2:tile_id': props.get('s2:tile_id'),
+            's2:granule_id': props.get('s2:granule_id'),
+        })
+    elif satellite == 'sentinel-1':
+        extra_props.update({
+            'sar:polarizations': props.get('sar:polarizations'),
+            'sar:frequency_band': props.get('sar:frequency_band'),
+            'sar:instrument_mode': props.get('sar:instrument_mode'),
+            'sar:product_type': props.get('sar:product_type'),
+            'sat:orbit_state': props.get('sat:orbit_state'),
+            'sat:relative_orbit': props.get('sat:relative_orbit'),
+        })
+    elif satellite == 'landsat-8':
+        extra_props.update({
+            'view:sun_azimuth': props.get('view:sun_azimuth'),
+            'view:sun_elevation': props.get('view:sun_elevation'),
+            'landsat:wrs_path': props.get('landsat:wrs_path'),
+            'landsat:wrs_row': props.get('landsat:wrs_row'),
+            'landsat:scene_id': props.get('landsat:scene_id'),
+            'landsat:collection_number': props.get('landsat:collection_number'),
+        })
+    elif satellite == 'modis':
+        extra_props.update({
+            'modis:horizontal_tile': props.get('modis:horizontal-tile'),
+            'modis:vertical_tile': props.get('modis:vertical-tile'),
+        })
+    
     return {
         'id': feature.get('id'),
         'datetime': props.get('datetime'),
@@ -328,16 +429,5 @@ def process_stac_item(feature: Dict[str, Any], satellite: str) -> Dict[str, Any]
         'bbox': feature.get('bbox'),
         'geometry': feature.get('geometry'),
         'assets': processed_assets,
-        'properties': {
-            'platform': props.get('platform'),
-            'constellation': props.get('constellation'),
-            'instrument': props.get('instruments'),
-            'gsd': props.get('gsd'),
-            'view:sun_azimuth': props.get('view:sun_azimuth'),
-            'view:sun_elevation': props.get('view:sun_elevation'),
-            's2:tile_id': props.get('s2:tile_id'),
-            's2:granule_id': props.get('s2:granule_id'),
-            'landsat:wrs_path': props.get('landsat:wrs_path'),
-            'landsat:wrs_row': props.get('landsat:wrs_row'),
-        }
+        'properties': extra_props
     }

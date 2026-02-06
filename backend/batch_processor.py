@@ -18,10 +18,12 @@ import traceback
 from datetime import datetime, timezone
 from typing import Dict, List, Any
 from decimal import Decimal
+import numpy as np
 
 # Import application services
 from app.services.raster_processor import RasterProcessor
 from app.services.vegetation_index_calculator import VegetationIndexCalculator
+from app.services.temporal_compositor import TemporalCompositor
 from app.services.s3_storage_service import S3StorageService
 from app.services.task_repository import TaskRepository
 from app.models.aoi import GeoJSON
@@ -80,6 +82,7 @@ class BatchProcessor:
         # Initialize services
         self.raster_processor = RasterProcessor()
         self.index_calculator = VegetationIndexCalculator()
+        self.temporal_compositor = TemporalCompositor()
         self.s3_service = S3StorageService(
             bucket_name=self.s3_bucket,
             region=self.aws_region
@@ -133,6 +136,35 @@ class BatchProcessor:
         # Output format
         output_format = os.getenv('OUTPUT_FORMAT', 'COG')
         params['output_format'] = output_format
+        
+        # Composite parameters
+        satellite = os.getenv('SATELLITE')
+        if satellite:
+            params['satellite'] = satellite
+        
+        composite_mode = os.getenv('COMPOSITE_MODE')
+        if composite_mode:
+            params['composite_mode'] = composite_mode
+        
+        apply_cloud_mask = os.getenv('APPLY_CLOUD_MASK')
+        if apply_cloud_mask:
+            params['apply_cloud_mask'] = apply_cloud_mask.lower() in ('true', '1', 'yes')
+        
+        date_range_str = os.getenv('DATE_RANGE')
+        if date_range_str:
+            params['date_range'] = json.loads(date_range_str)
+        
+        image_urls_str = os.getenv('IMAGE_URLS')
+        if image_urls_str:
+            params['image_urls'] = json.loads(image_urls_str)
+        
+        image_timestamps_str = os.getenv('IMAGE_TIMESTAMPS')
+        if image_timestamps_str:
+            params['image_timestamps'] = json.loads(image_timestamps_str)
+        
+        qa_band_urls_str = os.getenv('QA_BAND_URLS')
+        if qa_band_urls_str:
+            params['qa_band_urls'] = json.loads(qa_band_urls_str)
         
         logger.info(f"Task parameters: {json.dumps(params, indent=2)}")
         
@@ -398,6 +430,144 @@ class BatchProcessor:
         
         return result
     
+    def process_temporal_composite(self, params: Dict[str, Any]) -> ProcessingResult:
+        """
+        处理时间合成任务。
+
+        流程:
+        1. 读取每张影像并裁剪到 AOI
+        2. 可选：应用云掩膜
+        3. 按月度分组并计算均值合成
+        4. 保存结果为 COG 并上传到 S3
+
+        Args:
+            params: 任务参数，包含:
+                - image_urls: 影像 URL 列表
+                - image_timestamps: ISO 格式时间戳列表
+                - aoi: GeoJSON AOI
+                - satellite: 卫星类型
+                - composite_mode: 合成模式 (目前支持 "monthly")
+                - apply_cloud_mask: 是否应用云掩膜
+                - qa_band_urls: 质量波段 URL 列表（与 image_urls 对应）
+                - indices: 可选，合成后计算的植被指数
+
+        Returns:
+            ProcessingResult
+        """
+        logger.info("Starting temporal composite processing")
+
+        image_urls = params.get('image_urls', [])
+        timestamp_strs = params.get('image_timestamps', [])
+        aoi_dict = params.get('aoi')
+        satellite = params.get('satellite', 'sentinel-2')
+        apply_mask = params.get('apply_cloud_mask', False)
+        qa_band_urls = params.get('qa_band_urls', [])
+        indices = params.get('indices', [])
+
+        if not image_urls:
+            raise ValueError("image_urls is required for composite task")
+        if not timestamp_strs:
+            raise ValueError("image_timestamps is required for composite task")
+        if not aoi_dict:
+            raise ValueError("AOI is required for composite task")
+        if len(image_urls) != len(timestamp_strs):
+            raise ValueError("image_urls and image_timestamps must have the same length")
+
+        aoi = GeoJSON(**aoi_dict)
+        timestamps = [datetime.fromisoformat(ts.replace('Z', '+00:00')) for ts in timestamp_strs]
+
+        self.update_task_status('running', progress=5)
+
+        # Step 1: Read and clip all images
+        logger.info(f"Reading {len(image_urls)} images")
+        clipped_images: list = []
+        total_images = len(image_urls)
+
+        for i, url in enumerate(image_urls):
+            try:
+                logger.info(f"Reading image {i+1}/{total_images}: {url[-60:]}")
+                raw = self.raster_processor.read_cog_from_url(url)
+                clipped = self.raster_processor.clip_to_aoi(raw, aoi)
+
+                # Step 2: Apply cloud mask if requested
+                if apply_mask and i < len(qa_band_urls) and qa_band_urls[i]:
+                    logger.info(f"Applying cloud mask for image {i+1}")
+                    qa_raw = self.raster_processor.read_cog_from_url(qa_band_urls[i])
+                    qa_clipped = self.raster_processor.clip_to_aoi(qa_raw, aoi)
+                    clipped = self.raster_processor.apply_cloud_mask(clipped, qa_clipped, satellite)
+
+                clipped_images.append(clipped)
+            except Exception as e:
+                logger.warning(f"Failed to read image {i+1}, skipping: {e}")
+                continue
+
+            progress = 5 + int((i + 1) / total_images * 40)
+            self.update_task_status('running', progress=progress)
+
+        if not clipped_images:
+            raise ValueError("No images could be read successfully")
+
+        logger.info(f"Successfully read {len(clipped_images)} of {total_images} images")
+
+        # Step 3: Composite
+        self.update_task_status('running', progress=50)
+        composites = self.temporal_compositor.composite_monthly(clipped_images, timestamps[:len(clipped_images)])
+
+        logger.info(f"Generated {len(composites)} monthly composites")
+
+        # Step 4: Save results
+        self.update_task_status('running', progress=70)
+        output_files = []
+
+        for idx, (period_label, composite_data) in enumerate(composites):
+            # Save composite band
+            output_filename = f"composite_{period_label}.tif"
+            temp_path = os.path.join(self.temp_dir, output_filename)
+
+            logger.info(f"Saving composite {period_label} to {temp_path}")
+            self.raster_processor.to_cog(composite_data, temp_path, compress='DEFLATE', nodata=np.nan)
+
+            s3_key = f"results/{self.task_id}/{output_filename}"
+            self.s3_service.upload_file(temp_path, s3_key, metadata={
+                'task_id': self.task_id,
+                'period': period_label,
+                'type': 'composite'
+            })
+            download_url = self.s3_service.generate_presigned_url(s3_key, expiration=86400)
+            file_size_mb = round(os.path.getsize(temp_path) / (1024 * 1024), 2)
+
+            output_files.append({
+                'name': output_filename,
+                's3_key': s3_key,
+                'download_url': download_url,
+                'size_mb': file_size_mb,
+                'index': f"composite_{period_label}"
+            })
+
+            # Optionally compute vegetation indices on the composite
+            if indices:
+                # This requires the composite to have the right bands — skip for now
+                # as composite is typically single-band per input
+                pass
+
+            progress = 70 + int((idx + 1) / len(composites) * 25)
+            self.update_task_status('running', progress=progress)
+
+        result = ProcessingResult(
+            output_files=output_files,
+            metadata={
+                'composite_mode': 'monthly',
+                'satellite': satellite,
+                'total_input_images': total_images,
+                'successful_images': len(clipped_images),
+                'periods': [p for p, _ in composites],
+                'cloud_mask_applied': apply_mask,
+            }
+        )
+
+        logger.info(f"Temporal composite processing completed. Generated {len(output_files)} files.")
+        return result
+
     def cleanup(self):
         """Clean up temporary files."""
         try:
@@ -429,6 +599,8 @@ class BatchProcessor:
             # Process based on task type
             if task_type == 'indices':
                 result = self.process_vegetation_indices(params)
+            elif task_type == 'composite':
+                result = self.process_temporal_composite(params)
             else:
                 raise ValueError(f"Unsupported task type: {task_type}")
             
