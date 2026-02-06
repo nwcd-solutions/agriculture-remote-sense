@@ -1,16 +1,13 @@
 """
 Lambda handler for satellite data query
 Implements all query functionality from the original ECS API
+Standalone version - no external dependencies
 """
 import json
 import os
 import logging
-import sys
 from datetime import datetime
 from typing import Dict, Any, List, Optional
-
-# Add app directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
@@ -80,7 +77,7 @@ def health_check():
         'body': json.dumps({
             'status': 'healthy',
             'service': 'satellite-gis-query-lambda',
-            'version': '1.0.0'
+            'version': '2.0.0-standalone'
         })
     }
 

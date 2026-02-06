@@ -1,16 +1,400 @@
 """
 Lambda handler for processing tasks (submit/query/cancel)
+Standalone version with all dependencies inlined - no app module imports
 """
 import json
 import os
 import logging
 import base64
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import Dict, List, Optional, Any, Tuple
+from decimal import Decimal
+
+import boto3
+from botocore.exceptions import ClientError
 
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
-# Lazy initialization of services to avoid import errors
+
+# ============================================================================
+# Inlined Models (minimal Pydantic-free versions)
+# ============================================================================
+
+class ProcessingTask:
+    """Processing task model (Pydantic-free)"""
+    def __init__(
+        self,
+        task_id: str,
+        task_type: str,
+        status: str,
+        progress: int,
+        created_at: datetime,
+        updated_at: datetime,
+        parameters: Dict[str, Any],
+        batch_job_id: Optional[str] = None,
+        batch_job_status: Optional[str] = None,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        result: Optional[Dict] = None,
+        error: Optional[str] = None,
+        retry_count: int = 0,
+        max_retries: int = 3
+    ):
+        self.task_id = task_id
+        self.task_type = task_type
+        self.status = status
+        self.progress = progress
+        self.batch_job_id = batch_job_id
+        self.batch_job_status = batch_job_status
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.started_at = started_at
+        self.completed_at = completed_at
+        self.parameters = parameters
+        self.result = result
+        self.error = error
+        self.retry_count = retry_count
+        self.max_retries = max_retries
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            'task_id': self.task_id,
+            'task_type': self.task_type,
+            'status': self.status,
+            'progress': self.progress,
+            'batch_job_id': self.batch_job_id,
+            'batch_job_status': self.batch_job_status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+            'parameters': self.parameters,
+            'result': self.result,
+            'error': self.error,
+            'retry_count': self.retry_count,
+            'max_retries': self.max_retries
+        }
+
+
+# ============================================================================
+# Inlined Services
+# ============================================================================
+
+class BatchJobManager:
+    """Manages AWS Batch job lifecycle"""
+    
+    def __init__(self, job_queue: str, job_definition: str, s3_bucket: str, region: str):
+        self.job_queue = job_queue
+        self.job_definition = job_definition
+        self.s3_bucket = s3_bucket
+        self.region = region
+        self.batch_client = boto3.client('batch', region_name=region)
+    
+    def submit_job(
+        self,
+        task_id: str,
+        parameters: Dict,
+        job_name: str,
+        retry_attempts: int = 3,
+        timeout_seconds: int = 3600
+    ) -> str:
+        """Submit a job to AWS Batch"""
+        job_name = job_name.replace('_', '-')[:128]
+        
+        container_overrides = {
+            'environment': [
+                {'name': 'TASK_ID', 'value': task_id},
+                {'name': 'S3_BUCKET', 'value': self.s3_bucket},
+                {'name': 'AWS_REGION', 'value': self.region},
+            ]
+        }
+        
+        for key, value in parameters.items():
+            if isinstance(value, (dict, list)):
+                value_str = json.dumps(value)
+            else:
+                value_str = str(value)
+            container_overrides['environment'].append({
+                'name': key.upper(),
+                'value': value_str
+            })
+        
+        response = self.batch_client.submit_job(
+            jobName=job_name,
+            jobQueue=self.job_queue,
+            jobDefinition=self.job_definition,
+            containerOverrides=container_overrides,
+            retryStrategy={'attempts': retry_attempts},
+            timeout={'attemptDurationSeconds': timeout_seconds}
+        )
+        
+        return response['jobId']
+    
+    def get_job_status(self, batch_job_id: str) -> Dict:
+        """Get the status of an AWS Batch job"""
+        response = self.batch_client.describe_jobs(jobs=[batch_job_id])
+        
+        if not response['jobs']:
+            return {'job_id': batch_job_id, 'status': 'NOT_FOUND'}
+        
+        job = response['jobs'][0]
+        return {
+            'job_id': job['jobId'],
+            'job_name': job['jobName'],
+            'status': job['status'],
+            'status_reason': job.get('statusReason', ''),
+            'created_at': job.get('createdAt'),
+            'started_at': job.get('startedAt'),
+            'stopped_at': job.get('stoppedAt'),
+        }
+    
+    def cancel_job(self, batch_job_id: str, reason: str = "Cancelled by user") -> bool:
+        """Cancel a running AWS Batch job"""
+        try:
+            self.batch_client.terminate_job(jobId=batch_job_id, reason=reason)
+            return True
+        except ClientError:
+            return False
+
+
+class TaskRepository:
+    """DynamoDB task repository"""
+    
+    def __init__(self, table_name: str, region: str):
+        self.table_name = table_name
+        self.region = region
+        dynamodb = boto3.resource("dynamodb", region_name=region)
+        self.table = dynamodb.Table(table_name)
+    
+    def create_task(self, task: ProcessingTask) -> str:
+        """Create a new task"""
+        if not task.task_id:
+            task.task_id = f"task_{uuid.uuid4().hex[:12]}"
+        
+        ttl = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+        
+        item = self._task_to_dynamodb(task)
+        item["ttl"] = ttl
+        
+        self.table.put_item(Item=item)
+        return task.task_id
+    
+    def get_task(self, task_id: str) -> ProcessingTask:
+        """Get a task by ID"""
+        response = self.table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key("task_id").eq(task_id),
+            Limit=1
+        )
+        
+        items = response.get("Items", [])
+        if not items:
+            raise ValueError(f"Task not found: {task_id}")
+        
+        return self._dynamodb_to_task(items[0])
+    
+    def update_task_status(
+        self,
+        task_id: str,
+        status: str,
+        progress: Optional[int] = None,
+        batch_job_id: Optional[str] = None,
+        batch_job_status: Optional[str] = None,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        result: Optional[Dict] = None,
+        error: Optional[str] = None,
+        retry_count: Optional[int] = None
+    ) -> bool:
+        """Update task status"""
+        task = self.get_task(task_id)
+        
+        update_expression = "SET #status = :status, updated_at = :updated_at"
+        expression_attribute_names = {"#status": "status"}
+        expression_attribute_values = {
+            ":status": status,
+            ":updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        if progress is not None:
+            update_expression += ", progress = :progress"
+            expression_attribute_values[":progress"] = progress
+        
+        if batch_job_id is not None:
+            update_expression += ", batch_job_id = :batch_job_id"
+            expression_attribute_values[":batch_job_id"] = batch_job_id
+        
+        if batch_job_status is not None:
+            update_expression += ", batch_job_status = :batch_job_status"
+            expression_attribute_values[":batch_job_status"] = batch_job_status
+        
+        if started_at is not None:
+            update_expression += ", started_at = :started_at"
+            expression_attribute_values[":started_at"] = started_at.isoformat()
+        
+        if completed_at is not None:
+            update_expression += ", completed_at = :completed_at"
+            expression_attribute_values[":completed_at"] = completed_at.isoformat()
+        
+        if result is not None:
+            update_expression += ", #result = :result"
+            expression_attribute_names["#result"] = "result"
+            expression_attribute_values[":result"] = result
+        
+        if error is not None:
+            update_expression += ", #error = :error"
+            expression_attribute_names["#error"] = "error"
+            expression_attribute_values[":error"] = error
+        
+        if retry_count is not None:
+            update_expression += ", retry_count = :retry_count"
+            expression_attribute_values[":retry_count"] = retry_count
+        
+        self.table.update_item(
+            Key={
+                "task_id": task_id,
+                "created_at": task.created_at.isoformat()
+            },
+            UpdateExpression=update_expression,
+            ExpressionAttributeNames=expression_attribute_names,
+            ExpressionAttributeValues=expression_attribute_values
+        )
+        
+        return True
+    
+    def list_tasks(
+        self,
+        status: Optional[str] = None,
+        limit: int = 20,
+        last_evaluated_key: Optional[Dict[str, Any]] = None
+    ) -> Tuple[List[ProcessingTask], Optional[Dict[str, Any]]]:
+        """List tasks with optional filtering and pagination"""
+        if status:
+            query_params = {
+                "IndexName": "StatusIndex",
+                "KeyConditionExpression": boto3.dynamodb.conditions.Key("status").eq(status),
+                "Limit": limit,
+                "ScanIndexForward": False
+            }
+            
+            if last_evaluated_key:
+                query_params["ExclusiveStartKey"] = last_evaluated_key
+            
+            response = self.table.query(**query_params)
+        else:
+            scan_params = {"Limit": limit}
+            
+            if last_evaluated_key:
+                scan_params["ExclusiveStartKey"] = last_evaluated_key
+            
+            response = self.table.scan(**scan_params)
+        
+        tasks = [self._dynamodb_to_task(item) for item in response.get("Items", [])]
+        next_key = response.get("LastEvaluatedKey")
+        
+        return tasks, next_key
+    
+    def _task_to_dynamodb(self, task: ProcessingTask) -> Dict[str, Any]:
+        """Convert task to DynamoDB format"""
+        item = {
+            "task_id": task.task_id,
+            "created_at": task.created_at.isoformat(),
+            "task_type": task.task_type,
+            "status": task.status,
+            "progress": task.progress,
+            "updated_at": task.updated_at.isoformat(),
+            "parameters": task.parameters,
+            "retry_count": task.retry_count,
+            "max_retries": task.max_retries
+        }
+        
+        if task.batch_job_id:
+            item["batch_job_id"] = task.batch_job_id
+        if task.batch_job_status:
+            item["batch_job_status"] = task.batch_job_status
+        if task.started_at:
+            item["started_at"] = task.started_at.isoformat()
+        if task.completed_at:
+            item["completed_at"] = task.completed_at.isoformat()
+        if task.result:
+            item["result"] = task.result
+        if task.error:
+            item["error"] = task.error
+        
+        return item
+    
+    def _dynamodb_to_task(self, item: Dict[str, Any]) -> ProcessingTask:
+        """Convert DynamoDB item to task"""
+        item = self._convert_decimals(item)
+        
+        return ProcessingTask(
+            task_id=item["task_id"],
+            task_type=item["task_type"],
+            status=item["status"],
+            progress=item["progress"],
+            batch_job_id=item.get("batch_job_id"),
+            batch_job_status=item.get("batch_job_status"),
+            created_at=datetime.fromisoformat(item["created_at"]),
+            updated_at=datetime.fromisoformat(item["updated_at"]),
+            started_at=datetime.fromisoformat(item["started_at"]) if item.get("started_at") else None,
+            completed_at=datetime.fromisoformat(item["completed_at"]) if item.get("completed_at") else None,
+            parameters=item["parameters"],
+            result=item.get("result"),
+            error=item.get("error"),
+            retry_count=item.get("retry_count", 0),
+            max_retries=item.get("max_retries", 3)
+        )
+    
+    def _convert_decimals(self, obj: Any) -> Any:
+        """Convert DynamoDB Decimal types to Python native types"""
+        if isinstance(obj, list):
+            return [self._convert_decimals(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: self._convert_decimals(value) for key, value in obj.items()}
+        elif isinstance(obj, Decimal):
+            return int(obj) if obj % 1 == 0 else float(obj)
+        else:
+            return obj
+
+
+class S3StorageService:
+    """S3 storage service"""
+    
+    def __init__(self, bucket_name: str, region: str):
+        self.bucket_name = bucket_name
+        self.region = region
+        self.s3_client = boto3.client('s3', region_name=region)
+    
+    def generate_presigned_url(self, s3_key: str, expiration: int = 3600) -> str:
+        """Generate a presigned URL"""
+        return self.s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': self.bucket_name, 'Key': s3_key},
+            ExpiresIn=expiration
+        )
+    
+    def file_exists(self, s3_key: str) -> bool:
+        """Check if file exists"""
+        try:
+            self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+            return True
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                return False
+            raise
+    
+    def get_file_size(self, s3_key: str) -> int:
+        """Get file size in bytes"""
+        response = self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+        return response['ContentLength']
+
+
+# ============================================================================
+# Service Instances (lazy initialization)
+# ============================================================================
+
 _batch_manager = None
 _task_repository = None
 _s3_service = None
@@ -19,7 +403,6 @@ _s3_service = None
 def get_batch_manager():
     global _batch_manager
     if _batch_manager is None:
-        from app.services.batch_job_manager import BatchJobManager
         _batch_manager = BatchJobManager(
             job_queue=os.getenv("BATCH_JOB_QUEUE", "satellite-gis-job-queue-dev"),
             job_definition=os.getenv("BATCH_JOB_DEFINITION", "satellite-gis-job-definition-dev"),
@@ -32,7 +415,6 @@ def get_batch_manager():
 def get_task_repository():
     global _task_repository
     if _task_repository is None:
-        from app.services.task_repository import TaskRepository
         _task_repository = TaskRepository(
             table_name=os.getenv("DYNAMODB_TABLE", "ProcessingTasks-dev"),
             region=os.getenv("AWS_REGION", "us-east-1")
@@ -43,13 +425,16 @@ def get_task_repository():
 def get_s3_service():
     global _s3_service
     if _s3_service is None:
-        from app.services.s3_storage_service import S3StorageService
         _s3_service = S3StorageService(
             bucket_name=os.getenv("S3_BUCKET", "satellite-gis-results-dev"),
             region=os.getenv("AWS_REGION", "us-east-1")
         )
     return _s3_service
 
+
+# ============================================================================
+# Lambda Handler
+# ============================================================================
 
 def cors_headers():
     """Return CORS headers"""
@@ -69,7 +454,7 @@ def health_check():
         'body': json.dumps({
             'status': 'healthy',
             'service': 'satellite-gis-process-lambda',
-            'version': '1.0.0'
+            'version': '2.0.0-standalone'
         })
     }
 
@@ -107,13 +492,10 @@ def handler(event, context):
         if http_method == 'POST' and '/indices' in path:
             return submit_job(event)
         elif http_method == 'GET' and '/tasks' in path:
-            # Check if it's a specific task or list all tasks
             path_parts = path.rstrip('/').split('/')
             if path_parts[-1] == 'tasks':
-                # GET /api/process/tasks - List all tasks
                 return list_tasks(event)
             else:
-                # GET /api/process/tasks/{task_id} - Get specific task
                 return get_task_status(event)
         elif http_method == 'DELETE' and '/tasks/' in path:
             return cancel_task(event)
@@ -135,8 +517,6 @@ def handler(event, context):
 
 def submit_job(event):
     """Submit processing job to Batch"""
-    from app.models.processing import ProcessingTask
-    
     body = json.loads(event.get('body', '{}'))
     
     # Create task
@@ -188,11 +568,9 @@ def submit_job(event):
 
 def get_task_status(event):
     """Get task status"""
-    # Extract task_id from path
     path = event.get('path', event.get('rawPath', ''))
     task_id = path.split('/')[-1]
     
-    # Get task from DynamoDB
     task_repository = get_task_repository()
     task = task_repository.get_task(task_id)
     
@@ -203,7 +581,6 @@ def get_task_status(event):
         
         # Update task status based on Batch status
         if batch_status['status'] == 'SUCCEEDED' and task.status != 'completed':
-            # Generate presigned URLs for results
             s3_service = get_s3_service()
             output_files = []
             for index in task.parameters.get('indices', []):
@@ -230,7 +607,7 @@ def get_task_status(event):
     return {
         'statusCode': 200,
         'headers': cors_headers(),
-        'body': json.dumps(task.model_dump(), default=str)
+        'body': json.dumps(task.to_dict(), default=str)
     }
 
 
@@ -259,27 +636,15 @@ def cancel_task(event):
     }
 
 
-
 def list_tasks(event):
-    """
-    List all tasks with optional filtering and pagination
-    
-    Query parameters:
-    - status: Filter by status (queued, running, completed, failed)
-    - limit: Maximum number of tasks to return (1-100, default 20)
-    - offset: Pagination offset key (base64 encoded)
-    """
-    from app.services.task_repository import TaskNotFoundError
-    
+    """List all tasks with optional filtering and pagination"""
     try:
-        # Parse query parameters
         query_params = event.get('queryStringParameters') or {}
         
         status_filter = query_params.get('status')
         limit = int(query_params.get('limit', 20))
         offset = query_params.get('offset')
         
-        # Validate parameters
         if limit < 1 or limit > 100:
             return {
                 'statusCode': 400,
@@ -296,7 +661,6 @@ def list_tasks(event):
                 })
             }
         
-        # Parse pagination key
         last_evaluated_key = None
         if offset:
             try:
@@ -309,7 +673,6 @@ def list_tasks(event):
                     'body': json.dumps({'error': 'Invalid offset key'})
                 }
         
-        # Query tasks from repository
         task_repository = get_task_repository()
         tasks, next_key = task_repository.list_tasks(
             status=status_filter,
@@ -317,13 +680,11 @@ def list_tasks(event):
             last_evaluated_key=last_evaluated_key
         )
         
-        # Encode next page key
         next_offset = None
         if next_key:
             next_offset = base64.b64encode(json.dumps(next_key).encode()).decode()
         
-        # Convert tasks to dict
-        tasks_data = [task.model_dump() for task in tasks]
+        tasks_data = [task.to_dict() for task in tasks]
         
         return {
             'statusCode': 200,
@@ -337,18 +698,6 @@ def list_tasks(event):
             }, default=str)
         }
         
-    except TaskNotFoundError:
-        return {
-            'statusCode': 200,
-            'headers': cors_headers(),
-            'body': json.dumps({
-                'tasks': [],
-                'total': 0,
-                'limit': limit,
-                'offset': offset,
-                'next_offset': None
-            })
-        }
     except Exception as e:
         logger.error(f"List tasks error: {str(e)}", exc_info=True)
         return {

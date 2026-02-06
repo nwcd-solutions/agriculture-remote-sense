@@ -36,20 +36,20 @@ export class LambdaApiStack extends cdk.Stack {
         : cdk.RemovalPolicy.DESTROY,
     });
 
-    // Common Lambda layer with dependencies
+    // Common Lambda layer with dependencies (only for process function)
     const dependenciesLayer = new lambda.LayerVersion(this, 'DependenciesLayer', {
       code: lambda.Code.fromAsset('../backend/lambda-layer'),
       compatibleRuntimes: [lambda.Runtime.PYTHON_3_11],
-      description: 'Dependencies for satellite GIS API',
+      description: 'Boto3 for satellite GIS process Lambda',
     });
 
-    // Query Lambda Function
+    // Query Lambda Function (no dependencies needed - uses only built-in urllib)
     const queryFunction = new lambda.Function(this, 'QueryFunction', {
       functionName: `satellite-gis-query-${config.environment}`,
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'lambda_query.handler',
       code: lambda.Code.fromAsset('../backend'),
-      layers: [dependenciesLayer],
+      // No layers needed - uses only Python built-in libraries
       memorySize: 512,
       timeout: cdk.Duration.seconds(30),
       environment: {
@@ -58,13 +58,13 @@ export class LambdaApiStack extends cdk.Stack {
       },
     });
 
-    // Process Lambda Function
+    // Process Lambda Function (needs boto3 for DynamoDB, Batch, S3)
     const processFunction = new lambda.Function(this, 'ProcessFunction', {
       functionName: `satellite-gis-process-${config.environment}`,
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'lambda_process.handler',
       code: lambda.Code.fromAsset('../backend'),
-      layers: [dependenciesLayer],
+      layers: [dependenciesLayer], // Only process function needs the layer
       memorySize: 512,
       timeout: cdk.Duration.seconds(30),
       environment: {
@@ -77,13 +77,13 @@ export class LambdaApiStack extends cdk.Stack {
       },
     });
 
-    // AOI Lambda Function
+    // AOI Lambda Function (no dependencies needed - uses only built-in libraries)
     const aoiFunction = new lambda.Function(this, 'AoiFunction', {
       functionName: `satellite-gis-aoi-${config.environment}`,
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'lambda_aoi.handler',
       code: lambda.Code.fromAsset('../backend'),
-      layers: [dependenciesLayer],
+      // No layers needed - uses only Python built-in libraries
       memorySize: 256,
       timeout: cdk.Duration.seconds(15),
       environment: {

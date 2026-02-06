@@ -1,6 +1,7 @@
 """
 Lambda handler for AOI (Area of Interest) operations
 Implements AOI validation and file upload functionality
+Standalone version - no external dependencies
 """
 import json
 import os
@@ -81,7 +82,7 @@ def health_check():
         'body': json.dumps({
             'status': 'healthy',
             'service': 'satellite-gis-aoi-lambda',
-            'version': '1.0.0'
+            'version': '2.0.0-standalone'
         })
     }
 
