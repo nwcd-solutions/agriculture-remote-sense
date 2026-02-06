@@ -4,9 +4,10 @@ Lambda handler for processing tasks (submit/query/cancel)
 import json
 import os
 import logging
+import base64
 from datetime import datetime, timezone
 from app.services.batch_job_manager import BatchJobManager
-from app.services.task_repository import TaskRepository
+from app.services.task_repository import TaskRepository, TaskNotFoundError
 from app.services.s3_storage_service import S3StorageService
 from app.models.processing import ProcessingTask
 
@@ -32,29 +33,76 @@ s3_service = S3StorageService(
 )
 
 
+def cors_headers():
+    """Return CORS headers"""
+    return {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type,X-Api-Key,Authorization',
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+    }
+
+
+def health_check():
+    """Health check endpoint"""
+    return {
+        'statusCode': 200,
+        'headers': cors_headers(),
+        'body': json.dumps({
+            'status': 'healthy',
+            'service': 'satellite-gis-process-lambda',
+            'version': '1.0.0'
+        })
+    }
+
+
 def handler(event, context):
     """
     Handle processing requests
     
     Routes:
     - POST /api/process/indices - Submit processing job
+    - GET /api/process/tasks - List all tasks (with filtering/pagination)
     - GET /api/process/tasks/{task_id} - Get task status
     - DELETE /api/process/tasks/{task_id} - Cancel task
+    - GET /health - Health check
     """
     try:
         http_method = event.get('httpMethod', event.get('requestContext', {}).get('http', {}).get('method'))
         path = event.get('path', event.get('rawPath', ''))
         
+        logger.info(f"Process handler: method={http_method}, path={path}")
+        
+        # Health check
+        if path in ['/', '/health'] and http_method == 'GET':
+            return health_check()
+        
+        # OPTIONS for CORS
+        if http_method == 'OPTIONS':
+            return {
+                'statusCode': 200,
+                'headers': cors_headers(),
+                'body': ''
+            }
+        
         # Route to appropriate handler
         if http_method == 'POST' and '/indices' in path:
             return submit_job(event)
-        elif http_method == 'GET' and '/tasks/' in path:
-            return get_task_status(event)
+        elif http_method == 'GET' and '/tasks' in path:
+            # Check if it's a specific task or list all tasks
+            path_parts = path.rstrip('/').split('/')
+            if path_parts[-1] == 'tasks':
+                # GET /api/process/tasks - List all tasks
+                return list_tasks(event)
+            else:
+                # GET /api/process/tasks/{task_id} - Get specific task
+                return get_task_status(event)
         elif http_method == 'DELETE' and '/tasks/' in path:
             return cancel_task(event)
         else:
             return {
                 'statusCode': 404,
+                'headers': cors_headers(),
                 'body': json.dumps({'error': 'Not found'})
             }
             
@@ -62,6 +110,7 @@ def handler(event, context):
         logger.error(f'Handler error: {str(e)}', exc_info=True)
         return {
             'statusCode': 500,
+            'headers': cors_headers(),
             'body': json.dumps({'error': str(e)})
         }
 
@@ -181,3 +230,99 @@ def cancel_task(event):
         'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
         'body': json.dumps({'task_id': task_id, 'status': 'cancelled'})
     }
+
+
+
+def list_tasks(event):
+    """
+    List all tasks with optional filtering and pagination
+    
+    Query parameters:
+    - status: Filter by status (queued, running, completed, failed)
+    - limit: Maximum number of tasks to return (1-100, default 20)
+    - offset: Pagination offset key (base64 encoded)
+    """
+    try:
+        # Parse query parameters
+        query_params = event.get('queryStringParameters') or {}
+        
+        status_filter = query_params.get('status')
+        limit = int(query_params.get('limit', 20))
+        offset = query_params.get('offset')
+        
+        # Validate parameters
+        if limit < 1 or limit > 100:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({'error': 'limit must be between 1 and 100'})
+            }
+        
+        if status_filter and status_filter not in ['queued', 'running', 'completed', 'failed']:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({
+                    'error': 'Invalid status. Must be one of: queued, running, completed, failed'
+                })
+            }
+        
+        # Parse pagination key
+        last_evaluated_key = None
+        if offset:
+            try:
+                last_evaluated_key = json.loads(base64.b64decode(offset))
+            except Exception as e:
+                logger.warning(f"Invalid offset key: {e}")
+                return {
+                    'statusCode': 400,
+                    'headers': cors_headers(),
+                    'body': json.dumps({'error': 'Invalid offset key'})
+                }
+        
+        # Query tasks from repository
+        tasks, next_key = task_repository.list_tasks(
+            status=status_filter,
+            limit=limit,
+            last_evaluated_key=last_evaluated_key
+        )
+        
+        # Encode next page key
+        next_offset = None
+        if next_key:
+            next_offset = base64.b64encode(json.dumps(next_key).encode()).decode()
+        
+        # Convert tasks to dict
+        tasks_data = [task.model_dump() for task in tasks]
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'tasks': tasks_data,
+                'total': len(tasks_data),
+                'limit': limit,
+                'offset': offset,
+                'next_offset': next_offset
+            }, default=str)
+        }
+        
+    except TaskNotFoundError:
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'tasks': [],
+                'total': 0,
+                'limit': limit,
+                'offset': offset,
+                'next_offset': None
+            })
+        }
+    except Exception as e:
+        logger.error(f"List tasks error: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'headers': cors_headers(),
+            'body': json.dumps({'error': str(e)})
+        }

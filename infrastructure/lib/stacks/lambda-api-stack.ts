@@ -77,6 +77,21 @@ export class LambdaApiStack extends cdk.Stack {
       },
     });
 
+    // AOI Lambda Function
+    const aoiFunction = new lambda.Function(this, 'AoiFunction', {
+      functionName: `satellite-gis-aoi-${config.environment}`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'lambda_aoi.handler',
+      code: lambda.Code.fromAsset('../backend'),
+      layers: [dependenciesLayer],
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(15),
+      environment: {
+        ENVIRONMENT: config.environment,
+        LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
+      },
+    });
+
     // Grant permissions to process function
     tasksTable.grantReadWriteData(processFunction);
     resultsBucket.grantReadWrite(processFunction);
@@ -185,6 +200,11 @@ export class LambdaApiStack extends cdk.Stack {
       allowTestInvoke: config.environment !== 'prod',
     });
 
+    const aoiIntegration = new apigateway.LambdaIntegration(aoiFunction, {
+      proxy: true,
+      allowTestInvoke: config.environment !== 'prod',
+    });
+
     // Create /api resource
     const apiResource = this.restApi.root.addResource('api');
 
@@ -233,6 +253,37 @@ export class LambdaApiStack extends cdk.Stack {
       },
     });
 
+    // Add GET method for listing all tasks
+    tasksResource.addMethod('GET', processIntegration, {
+      apiKeyRequired: true,
+      requestParameters: {
+        'method.request.querystring.status': false,
+        'method.request.querystring.limit': false,
+        'method.request.querystring.offset': false,
+      },
+    });
+
+    // Create /api/aoi resource
+    const aoiResource = apiResource.addResource('aoi');
+
+    // Create /api/aoi/validate endpoint
+    const validateResource = aoiResource.addResource('validate');
+    validateResource.addMethod('POST', aoiIntegration, {
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'AoiValidateRequestValidator', {
+        restApi: this.restApi,
+        requestValidatorName: 'aoi-validate-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // Create /api/aoi/upload endpoint
+    const uploadResource = aoiResource.addResource('upload');
+    uploadResource.addMethod('POST', aoiIntegration, {
+      apiKeyRequired: true,
+    });
+
     // Set API URL
     this.apiUrl = this.restApi.url;
 
@@ -262,6 +313,11 @@ export class LambdaApiStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'ProcessFunctionName', {
       value: processFunction.functionName,
       description: 'Process Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'AoiFunctionName', {
+      value: aoiFunction.functionName,
+      description: 'AOI Lambda function name',
     });
 
     new cdk.CfnOutput(this, 'UsagePlanId', {
