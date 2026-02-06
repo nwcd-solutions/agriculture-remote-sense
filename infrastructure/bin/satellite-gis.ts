@@ -6,6 +6,7 @@ import { StorageStack } from '../lib/stacks/storage-stack';
 import { DatabaseStack } from '../lib/stacks/database-stack';
 import { BatchStack } from '../lib/stacks/batch-stack';
 import { LambdaApiStack } from '../lib/stacks/lambda-api-stack';
+import { AuthStack } from '../lib/stacks/auth-stack';
 import { FrontendStack } from '../lib/stacks/frontend-stack';
 import { MonitoringStack } from '../lib/stacks/monitoring-stack';
 import { getConfig } from '../lib/config';
@@ -70,6 +71,14 @@ const apiStack = new LambdaApiStack(app, `SatelliteGis-Api-${config.environment}
   batchJobDefinitionName: `satellite-gis-processor-${config.environment}`,
 });
 
+// Create Auth Stack
+const authStack = new AuthStack(app, `SatelliteGis-Auth-${config.environment}`, {
+  env,
+  environment: config.environment,
+  description: `Authentication infrastructure for Satellite GIS Platform (${config.environment})`,
+  stackName: `SatelliteGis-Auth-${config.environment}`,
+});
+
 // Create Frontend Stack
 const frontendStack = new FrontendStack(app, `SatelliteGis-Frontend-${config.environment}`, {
   env,
@@ -78,6 +87,9 @@ const frontendStack = new FrontendStack(app, `SatelliteGis-Frontend-${config.env
   stackName: `SatelliteGis-Frontend-${config.environment}`,
   apiUrl: apiStack.apiUrl,
   apiKeyId: apiStack.apiKey.keyId,
+  userPoolId: authStack.userPool.userPoolId,
+  userPoolClientId: authStack.userPoolClient.userPoolClientId,
+  identityPoolId: authStack.identityPool.ref,
 });
 
 // Create Monitoring Stack (skip for now - Lambda doesn't have ECS service)

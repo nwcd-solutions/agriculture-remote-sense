@@ -10,6 +10,9 @@ export interface FrontendStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
   apiUrl: string;
   apiKeyId: string;  // API Key ID (will fetch value using Custom Resource)
+  userPoolId?: string;
+  userPoolClientId?: string;
+  identityPoolId?: string;
 }
 
 export class FrontendStack extends cdk.Stack {
@@ -20,7 +23,7 @@ export class FrontendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
-    const { config, apiUrl, apiKeyId } = props;
+    const { config, apiUrl, apiKeyId, userPoolId, userPoolClientId, identityPoolId } = props;
 
     // Get API Key value using Custom Resource
     const getApiKeyValue = new cr.AwsCustomResource(this, 'GetApiKeyValue', {
@@ -94,6 +97,18 @@ export class FrontendStack extends cdk.Stack {
           name: 'REACT_APP_ENVIRONMENT',
           value: config.environment,
         },
+        ...(userPoolId ? [{
+          name: 'REACT_APP_USER_POOL_ID',
+          value: userPoolId,
+        }] : []),
+        ...(userPoolClientId ? [{
+          name: 'REACT_APP_USER_POOL_CLIENT_ID',
+          value: userPoolClientId,
+        }] : []),
+        ...(identityPoolId ? [{
+          name: 'REACT_APP_IDENTITY_POOL_ID',
+          value: identityPoolId,
+        }] : []),
         {
           name: '_LIVE_UPDATES',
           value: JSON.stringify([

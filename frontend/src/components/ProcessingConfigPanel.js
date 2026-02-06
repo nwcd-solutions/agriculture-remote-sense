@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Card, Checkbox, Button, Space, Form, Progress, Alert, Typography, Divider, Tag, Switch, Radio } from 'antd';
-import { ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, StopOutlined, SyncOutlined } from '@ant-design/icons';
+import { ThunderboltOutlined, CheckCircleOutlined, CloseCircleOutlined, StopOutlined, SyncOutlined, EyeOutlined } from '@ant-design/icons';
+import ResultThumbnailModal from './ResultThumbnailModal';
 import './ProcessingConfigPanel.css';
 
 const { Text, Link } = Typography;
@@ -30,6 +31,7 @@ const ProcessingConfigPanel = ({
   const [processingMode, setProcessingMode] = useState('indices'); // 'indices' | 'composite'
   const [compositeMode, setCompositeMode] = useState('monthly');
   const [applyCloudMask, setApplyCloudMask] = useState(true);
+  const [thumbnailModalVisible, setThumbnailModalVisible] = useState(false);
 
   const indicesInfo = {
     NDVI: { name: 'NDVI', fullName: '归一化植被指数', description: '最常用的植被指数，评估植被健康状况' },
@@ -293,6 +295,15 @@ const ProcessingConfigPanel = ({
                           </Space>
                         </div>
                       ))}
+                      <Button
+                        type="primary"
+                        icon={<EyeOutlined />}
+                        onClick={() => setThumbnailModalVisible(true)}
+                        style={{ marginTop: 8 }}
+                        block
+                      >
+                        查看结果
+                      </Button>
                     </Space>
                   }
                   type="success" showIcon
@@ -302,6 +313,13 @@ const ProcessingConfigPanel = ({
           </div>
         )}
       </Form>
+
+      {/* 结果缩略图模态框 */}
+      <ResultThumbnailModal
+        visible={thumbnailModalVisible}
+        onClose={() => setThumbnailModalVisible(false)}
+        task={processingTask}
+      />
     </Card>
   );
 };

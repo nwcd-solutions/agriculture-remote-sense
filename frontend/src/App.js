@@ -1,12 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ConfigProvider, message, Layout } from 'antd';
+import { ConfigProvider, message, Layout, Button, Space, Avatar, Dropdown } from 'antd';
+import { UserOutlined, LogoutOutlined } from '@ant-design/icons';
 import zhCN from 'antd/locale/zh_CN';
+import { Amplify } from 'aws-amplify';
 import axios from 'axios';
+import AuthWrapper from './components/AuthWrapper';
 import MapComponent from './components/MapComponent';
 import DataQueryPanel from './components/DataQueryPanel';
 import ResultsPanel from './components/ResultsPanel';
 import ProcessingConfigPanel from './components/ProcessingConfigPanel';
+import { awsConfig } from './config/aws-config';
 import './App.css';
+
+// Configure Amplify
+if (awsConfig.Auth.userPoolId && awsConfig.Auth.userPoolWebClientId) {
+  Amplify.configure(awsConfig);
+}
 
 const { Header, Content, Sider } = Layout;
 
@@ -31,7 +40,35 @@ axios.interceptors.request.use(
 );
 
 function App() {
-  const [aoi, setAoi] = useState(null);
+  // Check if Cognito is configured
+  const cognitoEnabled = awsConfig.Auth.userPoolId && awsConfig.Auth.userPoolWebClientId;
+
+  const AppContent = ({ signOut, user }) => {
+    const [aoi, setAoi] = useState(null);
+  const [queryResults, setQueryResults] = useState([]);
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [processingTask, setProcessingTask] = useState(null);
+  const [processingLoading, setProcessingLoading] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState(null);
+
+  // User menu items
+  const userMenuItems = [
+    {
+      key: 'user',
+      label: user?.attributes?.email || user?.username || '用户',
+      disabled: true,
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'logout',
+      label: '退出登录',
+      icon: <LogoutOutlined />,
+      onClick: signOut,
+    },
+  ];
   const [queryResults, setQueryResults] = useState([]);
   const [queryLoading, setQueryLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
@@ -361,8 +398,20 @@ function App() {
     <ConfigProvider locale={zhCN}>
       <Layout className="app">
         <Header className="app-header">
-          <h1>卫星 GIS 平台</h1>
-          <p>基于 AWS Open Data 的遥感数据处理应用</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div>
+              <h1>卫星 GIS 平台</h1>
+              <p>基于 AWS Open Data 的遥感数据处理应用</p>
+            </div>
+            {cognitoEnabled && user && (
+              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+                <Space style={{ cursor: 'pointer', color: 'white' }}>
+                  <Avatar icon={<UserOutlined />} />
+                  <span>{user?.attributes?.name || user?.username || '用户'}</span>
+                </Space>
+              </Dropdown>
+            )}
+          </div>
         </Header>
         <Layout className="app-main">
           {/* 左侧查询面板 */}
@@ -429,6 +478,19 @@ function App() {
       </Layout>
     </ConfigProvider>
   );
+  };
+
+  // Wrap with AuthWrapper if Cognito is enabled
+  if (cognitoEnabled) {
+    return (
+      <AuthWrapper>
+        {({ signOut, user }) => <AppContent signOut={signOut} user={user} />}
+      </AuthWrapper>
+    );
+  }
+
+  // Otherwise render without authentication
+  return <AppContent signOut={() => {}} user={null} />;
 }
 
 export default App;
