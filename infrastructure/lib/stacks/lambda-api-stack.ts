@@ -64,7 +64,7 @@ export class LambdaApiStack extends cdk.Stack {
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'lambda_process.handler',
       code: lambda.Code.fromAsset('../backend'),
-      layers: [dependenciesLayer], // Only process function needs the layer
+      layers: [dependenciesLayer], // Use layer with stable boto3 version
       memorySize: 512,
       timeout: cdk.Duration.seconds(30),
       environment: {
