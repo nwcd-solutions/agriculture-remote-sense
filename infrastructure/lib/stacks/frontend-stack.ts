@@ -2,13 +2,14 @@ import * as cdk from 'aws-cdk-lib';
 import * as amplify from 'aws-cdk-lib/aws-amplify';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
+import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
 import { EnvironmentConfig } from '../config/types';
 
 export interface FrontendStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
   apiUrl: string;
-  apiKey: string;  // API Key value (not ID)
+  apiKeyId: string;  // API Key ID (will fetch value using Custom Resource)
 }
 
 export class FrontendStack extends cdk.Stack {
@@ -19,7 +20,34 @@ export class FrontendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
-    const { config, apiUrl, apiKey } = props;
+    const { config, apiUrl, apiKeyId } = props;
+
+    // Get API Key value using Custom Resource
+    const getApiKeyValue = new cr.AwsCustomResource(this, 'GetApiKeyValue', {
+      onCreate: {
+        service: 'APIGateway',
+        action: 'getApiKey',
+        parameters: {
+          apiKey: apiKeyId,
+          includeValue: true,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(apiKeyId),
+      },
+      onUpdate: {
+        service: 'APIGateway',
+        action: 'getApiKey',
+        parameters: {
+          apiKey: apiKeyId,
+          includeValue: true,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(apiKeyId),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
+      }),
+    });
+
+    const apiKey = getApiKeyValue.getResponseField('value');
 
     // Create IAM role for Amplify
     const amplifyRole = new iam.Role(this, 'AmplifyRole', {
