@@ -106,8 +106,8 @@ export class LambdaApiStack extends cdk.Stack {
       ],
       resources: [
         batchJobQueue.jobQueueArn,
-        `${batchJobDefinition.jobDefinitionArn}:*`,  // Include all versions
-        batchJobDefinition.jobDefinitionArn,
+        // Use wildcard to match all versions of job definition
+        `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job-definition/${batchJobDefinition.jobDefinitionName}*`,
         `arn:aws:batch:${cdk.Stack.of(this).region}:${cdk.Stack.of(this).account}:job/*`,
       ],
     }));
