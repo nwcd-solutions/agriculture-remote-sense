@@ -6,31 +6,49 @@ import os
 import logging
 import base64
 from datetime import datetime, timezone
-from app.services.batch_job_manager import BatchJobManager
-from app.services.task_repository import TaskRepository, TaskNotFoundError
-from app.services.s3_storage_service import S3StorageService
-from app.models.processing import ProcessingTask
 
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
-# Initialize services
-batch_manager = BatchJobManager(
-    job_queue=os.getenv("BATCH_JOB_QUEUE", "satellite-gis-job-queue-dev"),
-    job_definition=os.getenv("BATCH_JOB_DEFINITION", "satellite-gis-job-definition-dev"),
-    s3_bucket=os.getenv("S3_BUCKET", "satellite-gis-results-dev"),
-    region=os.getenv("AWS_REGION", "us-east-1")
-)
+# Lazy initialization of services to avoid import errors
+_batch_manager = None
+_task_repository = None
+_s3_service = None
 
-task_repository = TaskRepository(
-    table_name=os.getenv("DYNAMODB_TABLE", "ProcessingTasks-dev"),
-    region=os.getenv("AWS_REGION", "us-east-1")
-)
 
-s3_service = S3StorageService(
-    bucket_name=os.getenv("S3_BUCKET", "satellite-gis-results-dev"),
-    region=os.getenv("AWS_REGION", "us-east-1")
-)
+def get_batch_manager():
+    global _batch_manager
+    if _batch_manager is None:
+        from app.services.batch_job_manager import BatchJobManager
+        _batch_manager = BatchJobManager(
+            job_queue=os.getenv("BATCH_JOB_QUEUE", "satellite-gis-job-queue-dev"),
+            job_definition=os.getenv("BATCH_JOB_DEFINITION", "satellite-gis-job-definition-dev"),
+            s3_bucket=os.getenv("S3_BUCKET", "satellite-gis-results-dev"),
+            region=os.getenv("AWS_REGION", "us-east-1")
+        )
+    return _batch_manager
+
+
+def get_task_repository():
+    global _task_repository
+    if _task_repository is None:
+        from app.services.task_repository import TaskRepository
+        _task_repository = TaskRepository(
+            table_name=os.getenv("DYNAMODB_TABLE", "ProcessingTasks-dev"),
+            region=os.getenv("AWS_REGION", "us-east-1")
+        )
+    return _task_repository
+
+
+def get_s3_service():
+    global _s3_service
+    if _s3_service is None:
+        from app.services.s3_storage_service import S3StorageService
+        _s3_service = S3StorageService(
+            bucket_name=os.getenv("S3_BUCKET", "satellite-gis-results-dev"),
+            region=os.getenv("AWS_REGION", "us-east-1")
+        )
+    return _s3_service
 
 
 def cors_headers():
@@ -117,6 +135,8 @@ def handler(event, context):
 
 def submit_job(event):
     """Submit processing job to Batch"""
+    from app.models.processing import ProcessingTask
+    
     body = json.loads(event.get('body', '{}'))
     
     # Create task
@@ -131,10 +151,12 @@ def submit_job(event):
     )
     
     # Save to DynamoDB
+    task_repository = get_task_repository()
     task_id = task_repository.create_task(task)
     task.task_id = task_id
     
     # Submit to Batch
+    batch_manager = get_batch_manager()
     batch_job_id = batch_manager.submit_job(
         task_id=task_id,
         parameters=body,
@@ -153,7 +175,7 @@ def submit_job(event):
     
     return {
         'statusCode': 200,
-        'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+        'headers': cors_headers(),
         'body': json.dumps({
             'task_id': task_id,
             'status': 'queued',
@@ -171,15 +193,18 @@ def get_task_status(event):
     task_id = path.split('/')[-1]
     
     # Get task from DynamoDB
+    task_repository = get_task_repository()
     task = task_repository.get_task(task_id)
     
     # Query Batch status if available
     if task.batch_job_id:
+        batch_manager = get_batch_manager()
         batch_status = batch_manager.get_job_status(task.batch_job_id)
         
         # Update task status based on Batch status
         if batch_status['status'] == 'SUCCEEDED' and task.status != 'completed':
             # Generate presigned URLs for results
+            s3_service = get_s3_service()
             output_files = []
             for index in task.parameters.get('indices', []):
                 s3_key = f"tasks/{task_id}/{index}.tif"
@@ -204,7 +229,7 @@ def get_task_status(event):
     
     return {
         'statusCode': 200,
-        'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+        'headers': cors_headers(),
         'body': json.dumps(task.model_dump(), default=str)
     }
 
@@ -214,9 +239,11 @@ def cancel_task(event):
     path = event.get('path', event.get('rawPath', ''))
     task_id = path.split('/')[-1]
     
+    task_repository = get_task_repository()
     task = task_repository.get_task(task_id)
     
     if task.batch_job_id:
+        batch_manager = get_batch_manager()
         batch_manager.cancel_job(task.batch_job_id, reason="Cancelled by user")
     
     task_repository.update_task_status(
@@ -227,7 +254,7 @@ def cancel_task(event):
     
     return {
         'statusCode': 200,
-        'headers': {'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*'},
+        'headers': cors_headers(),
         'body': json.dumps({'task_id': task_id, 'status': 'cancelled'})
     }
 
@@ -242,6 +269,8 @@ def list_tasks(event):
     - limit: Maximum number of tasks to return (1-100, default 20)
     - offset: Pagination offset key (base64 encoded)
     """
+    from app.services.task_repository import TaskNotFoundError
+    
     try:
         # Parse query parameters
         query_params = event.get('queryStringParameters') or {}
@@ -281,6 +310,7 @@ def list_tasks(event):
                 }
         
         # Query tasks from repository
+        task_repository = get_task_repository()
         tasks, next_key = task_repository.list_tasks(
             status=status_filter,
             limit=limit,
