@@ -145,11 +145,7 @@ export class LambdaApiStack extends cdk.Stack {
         throttlingBurstLimit: 200,
       },
       defaultCorsPreflightOptions: {
-        allowOrigins: [
-          'http://localhost:3000',
-          'https://dev.dfjse3jyewuby.amplifyapp.com',
-          'https://main.dfjse3jyewuby.amplifyapp.com',
-        ],
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowHeaders: [
           'Content-Type',
