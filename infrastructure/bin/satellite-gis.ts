@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
+import * as cr from 'aws-cdk-lib/custom-resources';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import { NetworkStack } from '../lib/stacks/network-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { DatabaseStack } from '../lib/stacks/database-stack';
@@ -70,6 +72,37 @@ const apiStack = new LambdaApiStack(app, `SatelliteGis-Api-${config.environment}
   batchJobDefinitionName: `satellite-gis-processor-${config.environment}`,
 });
 
+// Get API Key value using Custom Resource
+const getApiKeyValue = new cr.AwsCustomResource(apiStack, 'GetApiKeyValue', {
+  onCreate: {
+    service: 'APIGateway',
+    action: 'getApiKey',
+    parameters: {
+      apiKey: apiStack.apiKey.keyId,
+      includeValue: true,
+    },
+    physicalResourceId: cr.PhysicalResourceId.of(apiStack.apiKey.keyId),
+  },
+  onUpdate: {
+    service: 'APIGateway',
+    action: 'getApiKey',
+    parameters: {
+      apiKey: apiStack.apiKey.keyId,
+      includeValue: true,
+    },
+    physicalResourceId: cr.PhysicalResourceId.of(apiStack.apiKey.keyId),
+  },
+  policy: cr.AwsCustomResourcePolicy.fromStatements([
+    new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['apigateway:GET'],
+      resources: [apiStack.apiKey.keyArn],
+    }),
+  ]),
+});
+
+const apiKeyValue = getApiKeyValue.getResponseField('value');
+
 // Create Frontend Stack
 const frontendStack = new FrontendStack(app, `SatelliteGis-Frontend-${config.environment}`, {
   env,
@@ -77,7 +110,7 @@ const frontendStack = new FrontendStack(app, `SatelliteGis-Frontend-${config.env
   description: `Frontend infrastructure for Satellite GIS Platform (${config.environment})`,
   stackName: `SatelliteGis-Frontend-${config.environment}`,
   apiUrl: apiStack.apiUrl,
-  apiKeyId: apiStack.apiKey.keyId,
+  apiKey: apiKeyValue,
 });
 
 // Create Monitoring Stack (skip for now - Lambda doesn't have ECS service)

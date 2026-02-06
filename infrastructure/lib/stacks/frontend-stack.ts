@@ -8,7 +8,7 @@ import { EnvironmentConfig } from '../config/types';
 export interface FrontendStackProps extends cdk.StackProps {
   config: EnvironmentConfig;
   apiUrl: string;
-  apiKeyId: string;
+  apiKey: string;  // API Key value (not ID)
 }
 
 export class FrontendStack extends cdk.Stack {
@@ -19,7 +19,7 @@ export class FrontendStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FrontendStackProps) {
     super(scope, id, props);
 
-    const { config, apiUrl, apiKeyId } = props;
+    const { config, apiUrl, apiKey } = props;
 
     // Create IAM role for Amplify
     const amplifyRole = new iam.Role(this, 'AmplifyRole', {
@@ -55,8 +55,8 @@ export class FrontendStack extends cdk.Stack {
           value: apiUrl,
         },
         {
-          name: 'REACT_APP_API_KEY_ID',
-          value: apiKeyId,
+          name: 'REACT_APP_API_KEY',
+          value: apiKey,
         },
         {
           name: 'REACT_APP_ENVIRONMENT',
@@ -118,8 +118,8 @@ customHeaders:
           value: apiUrl,
         },
         {
-          name: 'REACT_APP_API_KEY_ID',
-          value: apiKeyId,
+          name: 'REACT_APP_API_KEY',
+          value: apiKey,
         },
       ],
     });
