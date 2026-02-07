@@ -56,7 +56,7 @@ function App() {
   const userMenuItems = [
     {
       key: 'user',
-      label: user?.attributes?.email || user?.username || '用户',
+      label: user?.signInDetails?.loginId || user?.username || '用户',
       disabled: true,
     },
     {
