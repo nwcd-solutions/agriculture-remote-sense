@@ -13,7 +13,7 @@ import { awsConfig } from './config/aws-config';
 import './App.css';
 
 // Configure Amplify
-if (awsConfig.Auth.userPoolId && awsConfig.Auth.userPoolWebClientId) {
+if (awsConfig.Auth?.Cognito?.userPoolId && awsConfig.Auth?.Cognito?.userPoolClientId) {
   Amplify.configure(awsConfig);
 }
 
@@ -41,7 +41,7 @@ axios.interceptors.request.use(
 
 function App() {
   // Check if Cognito is configured
-  const cognitoEnabled = awsConfig.Auth.userPoolId && awsConfig.Auth.userPoolWebClientId;
+  const cognitoEnabled = awsConfig.Auth?.Cognito?.userPoolId && awsConfig.Auth?.Cognito?.userPoolClientId;
 
   const AppContent = ({ signOut, user }) => {
     const [aoi, setAoi] = useState(null);
