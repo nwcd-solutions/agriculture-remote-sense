@@ -91,7 +91,6 @@ def handler(event, context):
       selfSignUpEnabled: true,
       signInAliases: {
         email: true,
-        username: true,
       },
       autoVerify: {
         email: true,
