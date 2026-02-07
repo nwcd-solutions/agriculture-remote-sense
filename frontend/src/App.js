@@ -401,7 +401,7 @@ function App() {
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
                 <Space style={{ cursor: 'pointer', color: 'white' }}>
                   <Avatar icon={<UserOutlined />} />
-                  <span>{user?.attributes?.name || user?.username || '用户'}</span>
+                  <span>{user?.signInDetails?.loginId || user?.username || '用户'}</span>
                 </Space>
               </Dropdown>
             )}
