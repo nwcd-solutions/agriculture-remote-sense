@@ -69,12 +69,6 @@ function App() {
       onClick: signOut,
     },
   ];
-  const [queryResults, setQueryResults] = useState([]);
-  const [queryLoading, setQueryLoading] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [processingTask, setProcessingTask] = useState(null);
-  const [processingLoading, setProcessingLoading] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState(null);
 
   // 处理 AOI 变化
   const handleAOIChange = useCallback((aoiGeoJSON) => {
