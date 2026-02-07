@@ -31,6 +31,18 @@ const AuthWrapper = ({ children }) => {
         isRequired: true,
       },
     },
+    signIn: {
+      username: {
+        placeholder: '请输入邮箱',
+        label: '邮箱',
+        isRequired: true,
+      },
+      password: {
+        placeholder: '请输入密码',
+        label: '密码',
+        isRequired: true,
+      },
+    },
   };
 
   const components = {
@@ -56,6 +68,7 @@ const AuthWrapper = ({ children }) => {
     <Authenticator
       formFields={formFields}
       components={components}
+      loginMechanisms={['email']}
       signUpAttributes={['email', 'name']}
     >
       {({ signOut, user }) => children({ signOut, user })}
