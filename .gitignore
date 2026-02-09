@@ -33,7 +33,6 @@ ec2-connection.md
 DEPLOYMENT_SUMMARY.md
 COGNITO_SETUP.md
 FRONTEND_DEPLOYMENT_STEPS.md
-GITHUB_TOKEN_SETUP.md
 infrastructure/STACK_OUTPUTS_REFERENCE.md
 
 # Frontend deployment files
