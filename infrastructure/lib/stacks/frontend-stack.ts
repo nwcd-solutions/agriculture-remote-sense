@@ -173,7 +173,7 @@ customHeaders:
     });
 
     new cdk.CfnOutput(this, 'RepositoryUrl', {
-      value: config.frontend.repositoryUrl || 'https://github.com/nwcd-solutions/agriculture-remote-sense',
+      value: config.frontend.repositoryUrl || 'https://github.com/nwcd-solutions/agriculture-remote-sensing',
       description: 'GitHub Repository URL to connect',
     });
 
