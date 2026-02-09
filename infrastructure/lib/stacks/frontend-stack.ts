@@ -65,6 +65,15 @@ export class FrontendStack extends cdk.Stack {
       ],
     });
 
+    // Validate GitHub token is provided
+    if (!config.frontend.githubToken) {
+      throw new Error(
+        'GitHub token is required for Amplify to connect to the repository. ' +
+        'Please set GITHUB_TOKEN environment variable or configure it in the config file. ' +
+        'See infrastructure/GITHUB_TOKEN_SETUP.md for instructions.'
+      );
+    }
+
     // Create Amplify App
     this.amplifyApp = new amplify.CfnApp(this, 'AmplifyApp', {
       name: `satellite-gis-${config.environment}`,
@@ -72,8 +81,7 @@ export class FrontendStack extends cdk.Stack {
       
       // Repository configuration - connect to GitHub
       repository: config.frontend.repositoryUrl,
-      // For public repositories, no access token is needed
-      ...(config.frontend.githubToken ? { accessToken: config.frontend.githubToken } : {}),
+      accessToken: config.frontend.githubToken,
       
       // IAM service role
       iamServiceRole: amplifyRole.roleArn,

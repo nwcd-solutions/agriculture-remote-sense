@@ -54,7 +54,10 @@ Set the following environment variables before deployment:
 export CDK_DEFAULT_ACCOUNT=<your-aws-account-id>
 export CDK_DEFAULT_REGION=<your-aws-region>
 export ALARM_EMAIL=<your-email-for-alarms>
+export GITHUB_TOKEN=<your-github-personal-access-token>  # Required for Frontend Stack
 ```
+
+**Note**: For Frontend Stack deployment, you need a GitHub Personal Access Token. See [GITHUB_TOKEN_SETUP.md](./GITHUB_TOKEN_SETUP.md) for detailed instructions on creating and configuring the token.
 
 ## Usage
 
