@@ -158,8 +158,14 @@ const ProcessingConfigPanel = ({
                 }
                 type="info" showIcon style={{ marginBottom: 16 }}
               />
+            ) : selectedImages && selectedImages.length > 0 ? (
+              <Alert
+                message={`已选择 ${selectedImages.length} 个影像`}
+                description="将对选中的影像批量计算植被指数"
+                type="info" showIcon style={{ marginBottom: 16 }}
+              />
             ) : (
-              <Alert message="请先选择影像" description="在查询结果中点击影像以选择" type="warning" showIcon style={{ marginBottom: 16 }} />
+              <Alert message="请先选择影像" description="在查询结果中点击影像以选择，或勾选多个影像进行批量处理" type="warning" showIcon style={{ marginBottom: 16 }} />
             )}
 
             <Form.Item label="选择植被指数">
@@ -167,7 +173,7 @@ const ProcessingConfigPanel = ({
                 value={selectedIndices}
                 onChange={(v) => setSelectedIndices(v)}
                 style={{ width: '100%' }}
-                disabled={disabled || !selectedImage}
+                disabled={disabled || (!selectedImage && (!selectedImages || selectedImages.length === 0))}
               >
                 <Space direction="vertical" style={{ width: '100%' }}>
                   {availableIndices.map(idx => (
