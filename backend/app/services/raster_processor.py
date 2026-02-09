@@ -125,7 +125,7 @@ class RasterProcessor:
         self, 
         data: xr.DataArray, 
         aoi: GeoJSON,
-        all_touched: bool = False
+        all_touched: bool = True
     ) -> xr.DataArray:
         """
         将栅格数据裁剪到感兴趣区域 (AOI)
@@ -142,6 +142,8 @@ class RasterProcessor:
             ValueError: 如果裁剪失败
         """
         try:
+            from shapely.geometry import box as shapely_box
+            
             # 转换 GeoJSON 到 shapely 几何对象
             geom = shape(aoi.model_dump())
             
@@ -163,9 +165,23 @@ class RasterProcessor:
                 from shapely.ops import transform as shapely_transform
                 geom = shapely_transform(transformer.transform, geom)
             
+            # 检查 AOI 与栅格数据的空间重叠
+            raster_bounds = data.rio.bounds()  # (left, bottom, right, top)
+            raster_box = shapely_box(*raster_bounds)
+            
+            intersection = geom.intersection(raster_box)
+            if intersection.is_empty:
+                raise ValueError(
+                    f"AOI does not overlap with raster data. "
+                    f"Raster bounds: {raster_bounds}, AOI bounds: {geom.bounds}"
+                )
+            
+            # 使用交集区域进行裁剪，避免 NoDataInBounds 错误
+            clip_geom = intersection
+            
             # 使用 rioxarray 的 clip 方法
             clipped = data.rio.clip(
-                [mapping(geom)], 
+                [mapping(clip_geom)], 
                 data.rio.crs,
                 drop=True,
                 all_touched=all_touched
