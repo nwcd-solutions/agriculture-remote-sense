@@ -566,6 +566,8 @@ def handler(event, context):
             return submit_indices_job(event)
         elif http_method == 'POST' and '/composite' in path:
             return submit_composite_job(event)
+        elif http_method == 'POST' and '/batch' in path:
+            return submit_batch_jobs(event)
         elif http_method == 'GET' and '/tasks' in path:
             path_parts = path.rstrip('/').split('/')
             if path_parts[-1] == 'tasks':
@@ -759,6 +761,114 @@ def submit_composite_job(event):
         }
     except Exception as e:
         logger.error(f"Submit composite job error: {str(e)}", exc_info=True)
+        return safe_error_response(e)
+
+
+def submit_batch_jobs(event):
+    """
+    Submit multiple vegetation indices processing jobs to Batch
+    
+    Expected body:
+    {
+        "tasks": [
+            {
+                "image_id": "...",
+                "indices": ["NDVI", "EVI"],
+                "aoi": { GeoJSON },
+                "band_urls": { ... }
+            },
+            ...
+        ]
+    }
+    
+    Returns:
+    {
+        "task_ids": ["task_xxx", "task_yyy", ...],
+        "batch_job_ids": ["job_xxx", "job_yyy", ...],
+        "total": 10,
+        "message": "Successfully submitted 10 tasks"
+    }
+    """
+    try:
+        body = json.loads(event.get('body', '{}'))
+        tasks_data = body.get('tasks', [])
+        
+        if not tasks_data:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({'error': 'No tasks provided'})
+            }
+        
+        logger.info(f"Submitting batch jobs: {len(tasks_data)} tasks")
+        
+        task_repository = get_task_repository()
+        batch_manager = get_batch_manager()
+        
+        task_ids = []
+        batch_job_ids = []
+        
+        for task_data in tasks_data:
+            try:
+                # Convert floats to Decimal
+                task_data = convert_floats_to_decimal(task_data)
+                
+                # Create task
+                task = ProcessingTask(
+                    task_id="",
+                    task_type="indices",
+                    status="queued",
+                    progress=0,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                    parameters=task_data
+                )
+                
+                # Save to DynamoDB
+                task_id = task_repository.create_task(task)
+                task.task_id = task_id
+                task_ids.append(task_id)
+                
+                logger.info(f"Created task in DynamoDB: {task_id}")
+                
+                # Submit to Batch
+                batch_parameters = convert_decimal_to_float(task_data)
+                batch_job_id = batch_manager.submit_job(
+                    task_id=task_id,
+                    parameters=batch_parameters,
+                    job_name=f"indices-{task_id}",
+                    retry_attempts=3,
+                    timeout_seconds=3600
+                )
+                
+                batch_job_ids.append(batch_job_id)
+                logger.info(f"Submitted Batch job: {batch_job_id} for task: {task_id}")
+                
+                # Update task with batch job ID
+                task_repository.update_task_status(
+                    task_id=task_id,
+                    status="queued",
+                    batch_job_id=batch_job_id,
+                    batch_job_status="SUBMITTED"
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to submit task: {e}")
+                continue
+        
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'task_ids': task_ids,
+                'batch_job_ids': batch_job_ids,
+                'total': len(task_ids),
+                'message': f'Successfully submitted {len(task_ids)} tasks'
+            })
+        }
+        
+    except Exception as e:
+        logger.error(f"Submit batch jobs error: {str(e)}", exc_info=True)
         return safe_error_response(e)
 
 

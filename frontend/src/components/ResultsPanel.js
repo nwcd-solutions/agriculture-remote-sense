@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Card, List, Image, Tag, Empty, Pagination, Select, Space, Typography, Spin, Button, Tooltip, message } from 'antd';
-import { CalendarOutlined, CloudOutlined, EnvironmentOutlined, DownloadOutlined, FileOutlined } from '@ant-design/icons';
+import { Card, List, Image, Tag, Empty, Pagination, Select, Space, Typography, Spin, Button, Tooltip, message, Checkbox } from 'antd';
+import { CalendarOutlined, CloudOutlined, EnvironmentOutlined, DownloadOutlined, FileOutlined, CloudDownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import './ResultsPanel.css';
 
@@ -15,7 +15,10 @@ const { Text } = Typography;
  * - loading: 加载状态
  * - onImageSelect: 影像选择回调
  * - onDownload: 下载回调函数
+ * - onDownloadToS3: 批量下载到S3回调函数
  * - selectedImageId: 当前选中的影像 ID
+ * - selectedImages: 选中的影像ID数组
+ * - onSelectionChange: 选择变化回调
  */
 const ResultsPanel = ({ 
   results = [], 
@@ -23,11 +26,15 @@ const ResultsPanel = ({
   loading = false,
   onImageSelect,
   onDownload,
-  selectedImageId = null
+  onDownloadToS3,
+  selectedImageId = null,
+  selectedImages = [],
+  onSelectionChange
 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
+  const [downloadingToS3, setDownloadingToS3] = useState(false);
 
   // 排序结果（按日期）
   const sortedResults = useMemo(() => {
@@ -109,6 +116,61 @@ const ResultsPanel = ({
     }
   };
 
+  // 处理复选框变化
+  const handleCheckboxChange = (imageId, checked, e) => {
+    e.stopPropagation(); // 防止触发影像选择
+    
+    let newSelection;
+    if (checked) {
+      newSelection = [...selectedImages, imageId];
+    } else {
+      newSelection = selectedImages.filter(id => id !== imageId);
+    }
+    
+    if (onSelectionChange) {
+      onSelectionChange(newSelection);
+    }
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = (checked) => {
+    if (checked) {
+      const allIds = sortedResults.map(item => item.id);
+      if (onSelectionChange) {
+        onSelectionChange(allIds);
+      }
+    } else {
+      if (onSelectionChange) {
+        onSelectionChange([]);
+      }
+    }
+  };
+
+  // 是否全选
+  const isAllSelected = sortedResults.length > 0 && selectedImages.length === sortedResults.length;
+  const isIndeterminate = selectedImages.length > 0 && selectedImages.length < sortedResults.length;
+
+  // 处理批量下载到S3
+  const handleDownloadToS3 = async () => {
+    if (selectedImages.length === 0) {
+      message.warning('请先选择要下载的影像');
+      return;
+    }
+
+    setDownloadingToS3(true);
+    try {
+      const selectedResults = results.filter(r => selectedImages.includes(r.id));
+      if (onDownloadToS3) {
+        await onDownloadToS3(selectedResults);
+      }
+    } catch (error) {
+      console.error('下载到S3失败:', error);
+      message.error('下载到S3失败');
+    } finally {
+      setDownloadingToS3(false);
+    }
+  };
+
   // 格式化文件大小
   const formatFileSize = (bytes) => {
     if (!bytes) return 'N/A';
@@ -156,7 +218,12 @@ const ResultsPanel = ({
         <Space>
           <span>查询结果</span>
           {results.length > 0 && (
-            <Tag color="blue">{results.length} 个影像</Tag>
+            <>
+              <Tag color="blue">{results.length} 个影像</Tag>
+              {selectedImages.length > 0 && (
+                <Tag color="green">已选 {selectedImages.length} 个</Tag>
+              )}
+            </>
           )}
         </Space>
       }
@@ -164,15 +231,24 @@ const ResultsPanel = ({
       bordered={false}
       extra={
         results.length > 0 && (
-          <Select
-            value={sortOrder}
-            onChange={handleSortChange}
-            style={{ width: 120 }}
-            size="small"
-          >
-            <Select.Option value="desc">最新优先</Select.Option>
-            <Select.Option value="asc">最早优先</Select.Option>
-          </Select>
+          <Space>
+            <Checkbox
+              checked={isAllSelected}
+              indeterminate={isIndeterminate}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+            >
+              全选
+            </Checkbox>
+            <Select
+              value={sortOrder}
+              onChange={handleSortChange}
+              style={{ width: 120 }}
+              size="small"
+            >
+              <Select.Option value="desc">最新优先</Select.Option>
+              <Select.Option value="asc">最早优先</Select.Option>
+            </Select>
+          </Space>
         )
       }
     >
@@ -193,6 +269,7 @@ const ResultsPanel = ({
             renderItem={(item) => {
               const fileInfo = getFileFormatInfo(item);
               const isSelected = selectedImageId === item.id;
+              const isChecked = selectedImages.includes(item.id);
               
               return (
                 <List.Item
@@ -201,6 +278,15 @@ const ResultsPanel = ({
                   onClick={() => handleImageClick(item)}
                 >
                   <div className="result-content">
+                    {/* 复选框 */}
+                    <div className="result-checkbox">
+                      <Checkbox
+                        checked={isChecked}
+                        onChange={(e) => handleCheckboxChange(item.id, e.target.checked, e)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+
                     {/* 缩略图 */}
                     <div className="result-thumbnail">
                       {item.thumbnail_url ? (
@@ -285,6 +371,21 @@ const ResultsPanel = ({
                 showTotal={(total) => `共 ${total} 个影像`}
                 pageSizeOptions={['10', '20', '50', '100']}
               />
+            </div>
+          )}
+
+          {/* 批量操作按钮 */}
+          {selectedImages.length > 0 && (
+            <div className="results-batch-actions" style={{ marginTop: 16, textAlign: 'center' }}>
+              <Button
+                type="primary"
+                icon={<CloudDownloadOutlined />}
+                onClick={handleDownloadToS3}
+                loading={downloadingToS3}
+                size="large"
+              >
+                下载到 S3 ({selectedImages.length} 个影像)
+              </Button>
             </div>
           )}
         </>

@@ -25,6 +25,7 @@ const ProcessingConfigPanel = ({
   onRefreshTask,
   aoi = null,
   satelliteType = 'sentinel-2',
+  selectedImages = [], // 新增：选中的影像ID数组
 }) => {
   const [form] = Form.useForm();
   const [selectedIndices, setSelectedIndices] = useState(['NDVI']);
@@ -48,6 +49,18 @@ const ProcessingConfigPanel = ({
     if (!selectedImage || selectedIndices.length === 0) return;
     if (onProcess) {
       onProcess({ image: selectedImage, indices: selectedIndices });
+    }
+  };
+
+  // 提交批量植被指数处理
+  const handleSubmitBatchIndices = () => {
+    if (!selectedImages || selectedImages.length === 0 || selectedIndices.length === 0) return;
+    
+    // 获取选中的影像对象
+    const images = queryResults.filter(img => selectedImages.includes(img.id));
+    
+    if (onProcess) {
+      onProcess({ images, indices: selectedIndices });
     }
   };
 
@@ -218,18 +231,34 @@ const ProcessingConfigPanel = ({
 
         {/* 提交按钮 */}
         <Form.Item>
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            onClick={handleSubmit}
-            disabled={!canSubmit()}
-            loading={isTaskActive()}
-            block
-          >
-            {isTaskActive()
-              ? '处理中...'
-              : processingMode === 'indices' ? '计算植被指数' : '开始时间合成'}
-          </Button>
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={handleSubmit}
+              disabled={!canSubmit()}
+              loading={isTaskActive()}
+              block
+            >
+              {isTaskActive()
+                ? '处理中...'
+                : processingMode === 'indices' ? '计算植被指数' : '开始时间合成'}
+            </Button>
+            
+            {/* 批量处理按钮 - 仅在植被指数模式且有选中影像时显示 */}
+            {processingMode === 'indices' && selectedImages && selectedImages.length > 0 && (
+              <Button
+                type="default"
+                icon={<ThunderboltOutlined />}
+                onClick={handleSubmitBatchIndices}
+                disabled={disabled || isTaskActive() || selectedIndices.length === 0}
+                loading={isTaskActive()}
+                block
+              >
+                批量计算 ({selectedImages.length} 个影像)
+              </Button>
+            )}
+          </Space>
         </Form.Item>
 
         {/* ========== 任务进度 ========== */}

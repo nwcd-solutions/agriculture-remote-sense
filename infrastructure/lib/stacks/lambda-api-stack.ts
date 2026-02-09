@@ -101,6 +101,25 @@ export class LambdaApiStack extends cdk.Stack {
       },
     });
 
+    // Download Lambda Function (needs boto3 for S3 operations)
+    const downloadFunction = new lambda.Function(this, 'DownloadFunction', {
+      functionName: `satellite-gis-download-${config.environment}`,
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'lambda_handlers.download_handler.handler',
+      code: lambda.Code.fromAsset('../backend'),
+      layers: [dependenciesLayer], // Use layer with boto3
+      memorySize: 512,
+      timeout: cdk.Duration.seconds(60), // Longer timeout for S3 operations
+      environment: {
+        ENVIRONMENT: config.environment,
+        S3_BUCKET: resultsBucket.bucketName,
+        LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
+        CORS_ORIGINS: config.environment === 'prod' 
+          ? process.env.CORS_ORIGINS || 'https://yourdomain.com'
+          : '*',
+      },
+    });
+
     // Grant permissions to process function
     tasksTable.grantReadWriteData(processFunction);
     resultsBucket.grantReadWrite(processFunction);
@@ -125,6 +144,23 @@ export class LambdaApiStack extends cdk.Stack {
         'batch:ListJobs',
       ],
       resources: ['*'],  // These actions require wildcard resource
+    }));
+
+    // Grant permissions to download function
+    resultsBucket.grantReadWrite(downloadFunction);
+    
+    // Grant access to AWS Open Data for download function
+    downloadFunction.addToRolePolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['s3:GetObject', 's3:ListBucket', 's3:CopyObject'],
+      resources: [
+        'arn:aws:s3:::sentinel-*',
+        'arn:aws:s3:::sentinel-*/*',
+        'arn:aws:s3:::usgs-landsat',
+        'arn:aws:s3:::usgs-landsat/*',
+        'arn:aws:s3:::modis-*',
+        'arn:aws:s3:::modis-*/*',
+      ],
     }));
 
     // Grant access to AWS Open Data
@@ -217,6 +253,11 @@ export class LambdaApiStack extends cdk.Stack {
       allowTestInvoke: config.environment !== 'prod',
     });
 
+    const downloadIntegration = new apigateway.LambdaIntegration(downloadFunction, {
+      proxy: true,
+      allowTestInvoke: config.environment !== 'prod',
+    });
+
     // Create /api resource
     const apiResource = this.restApi.root.addResource('api');
 
@@ -242,6 +283,30 @@ export class LambdaApiStack extends cdk.Stack {
       requestValidator: new apigateway.RequestValidator(this, 'IndicesRequestValidator', {
         restApi: this.restApi,
         requestValidatorName: 'indices-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // Create /api/process/composite endpoint
+    const compositeResource = processResource.addResource('composite');
+    compositeResource.addMethod('POST', processIntegration, {
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'CompositeRequestValidator', {
+        restApi: this.restApi,
+        requestValidatorName: 'composite-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
+    });
+
+    // Create /api/process/batch endpoint
+    const batchResource = processResource.addResource('batch');
+    batchResource.addMethod('POST', processIntegration, {
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'BatchRequestValidator', {
+        restApi: this.restApi,
+        requestValidatorName: 'batch-validator',
         validateRequestBody: true,
         validateRequestParameters: false,
       }),
@@ -294,6 +359,21 @@ export class LambdaApiStack extends cdk.Stack {
     const uploadResource = aoiResource.addResource('upload');
     uploadResource.addMethod('POST', aoiIntegration, {
       apiKeyRequired: true,
+    });
+
+    // Create /api/download resource
+    const downloadResource = apiResource.addResource('download');
+
+    // Create /api/download/batch endpoint
+    const downloadBatchResource = downloadResource.addResource('batch');
+    downloadBatchResource.addMethod('POST', downloadIntegration, {
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'DownloadBatchRequestValidator', {
+        restApi: this.restApi,
+        requestValidatorName: 'download-batch-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false,
+      }),
     });
 
     // Set API URL

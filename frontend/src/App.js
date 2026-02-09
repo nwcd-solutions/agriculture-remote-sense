@@ -48,6 +48,7 @@ function App() {
   const [queryResults, setQueryResults] = useState([]);
   const [queryLoading, setQueryLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImages, setSelectedImages] = useState([]); // 多选的影像ID数组
   const [processingTask, setProcessingTask] = useState(null);
   const [processingLoading, setProcessingLoading] = useState(false);
   const [pollingInterval, setPollingInterval] = useState(null);
@@ -80,6 +81,7 @@ function App() {
   const handleQuery = useCallback(async (queryParams) => {
     setQueryLoading(true);
     setQueryResults([]);
+    setSelectedImages([]); // 清空选择
     
     try {
       console.log('查询参数:', queryParams);
@@ -157,30 +159,98 @@ function App() {
   }, [pollingInterval]);
 
   // 处理植被指数计算
-  const handleProcess = useCallback(async ({ image, indices }) => {
+  const handleProcess = useCallback(async ({ image, indices, images }) => {
     setProcessingLoading(true);
     setProcessingTask(null);
     
     try {
+      // 批量处理模式
+      if (images && images.length > 0) {
+        console.log('🔍 [DEBUG] 批量处理模式:', { count: images.length, indices });
+        
+        const tasks = [];
+        for (const img of images) {
+          // 构建波段 URL 映射
+          const bandUrls = {};
+          if (img.assets) {
+            const standardBandKeys = {
+              'red': 'red',
+              'nir': 'nir',
+              'green': 'green',
+              'blue': 'blue'
+            };
+            
+            for (const [bandName, assetKey] of Object.entries(standardBandKeys)) {
+              if (img.assets[assetKey] && img.assets[assetKey].href) {
+                if (!assetKey.endsWith('-jp2')) {
+                  bandUrls[bandName] = img.assets[assetKey].href;
+                }
+              }
+            }
+            
+            if (!bandUrls.nir && img.assets['nir08']) {
+              bandUrls.nir = img.assets['nir08'].href;
+            }
+          }
+          
+          // 转换 S3 URL 为 HTTPS URL
+          const convertS3ToHttps = (url) => {
+            if (url.startsWith('s3://sentinel-s2-l2a/')) {
+              return url.replace(
+                's3://sentinel-s2-l2a/',
+                'https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/'
+              );
+            }
+            return url;
+          };
+          
+          const convertedBandUrls = {};
+          Object.keys(bandUrls).forEach(key => {
+            convertedBandUrls[key] = convertS3ToHttps(bandUrls[key]);
+          });
+          
+          tasks.push({
+            image_id: img.id,
+            indices: indices,
+            aoi: aoi,
+            output_format: 'COG',
+            band_urls: convertedBandUrls
+          });
+        }
+        
+        console.log('🔍 [DEBUG] 提交批量处理请求:', { taskCount: tasks.length });
+        
+        const response = await axios.post('/api/process/batch', { tasks });
+        
+        if (response.data && response.data.task_ids) {
+          message.success(`成功提交 ${response.data.task_ids.length} 个处理任务`);
+          // 显示第一个任务的状态
+          if (response.data.task_ids.length > 0) {
+            const firstTaskId = response.data.task_ids[0];
+            startPolling(firstTaskId);
+          }
+        }
+        
+        setProcessingLoading(false);
+        return;
+      }
+      
+      // 单个影像处理模式（原有逻辑）
       console.log('🔍 [DEBUG] 开始处理参数:', { image, indices });
       console.log('🔍 [DEBUG] 可用的资产键:', Object.keys(image.assets || {}));
       
       // 构建波段 URL 映射
       const bandUrls = {};
       if (image.assets) {
-        // 直接使用 STAC API 返回的标准资产键名
-        // 优先使用 COG 格式（不带 -jp2 后缀）
         const standardBandKeys = {
-          'red': 'red',       // B04 红光
-          'nir': 'nir',       // B08 近红外
-          'green': 'green',   // B03 绿光
-          'blue': 'blue'      // B02 蓝光
+          'red': 'red',
+          'nir': 'nir',
+          'green': 'green',
+          'blue': 'blue'
         };
         
-        // 精确匹配标准波段键名
         for (const [bandName, assetKey] of Object.entries(standardBandKeys)) {
           if (image.assets[assetKey] && image.assets[assetKey].href) {
-            // 确保不是 -jp2 后缀的资产
             if (!assetKey.endsWith('-jp2')) {
               bandUrls[bandName] = image.assets[assetKey].href;
               console.log(`🔍 [DEBUG] 匹配波段 ${bandName}: ${assetKey} -> ${image.assets[assetKey].href.slice(-50)}`);
@@ -188,18 +258,15 @@ function App() {
           }
         }
         
-        // 如果标准键名没有找到，尝试备用键名
         if (!bandUrls.nir && image.assets['nir08']) {
           bandUrls.nir = image.assets['nir08'].href;
           console.log('🔍 [DEBUG] 使用备用 nir08 作为 nir');
         }
       }
       
-      // 转换 S3 URL 为 HTTPS URL（用于公开访问）
+      // 转换 S3 URL 为 HTTPS URL
       const convertS3ToHttps = (url) => {
         if (url.startsWith('s3://sentinel-s2-l2a/')) {
-          // 转换为 Element84 的公开 HTTPS 端点
-          // s3://sentinel-s2-l2a/tiles/... → https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/tiles/...
           return url.replace(
             's3://sentinel-s2-l2a/',
             'https://sentinel-cogs.s3.us-west-2.amazonaws.com/sentinel-s2-l2a-cogs/'
@@ -208,7 +275,6 @@ function App() {
         return url;
       };
       
-      // 应用 URL 转换
       const convertedBandUrls = {};
       Object.keys(bandUrls).forEach(key => {
         convertedBandUrls[key] = convertS3ToHttps(bandUrls[key]);
@@ -223,9 +289,6 @@ function App() {
       };
       
       console.log('🔍 [DEBUG] 提交处理请求:', requestData);
-      console.log('🔍 [DEBUG] 原始波段 URLs:', bandUrls);
-      console.log('🔍 [DEBUG] 转换后波段 URLs:', convertedBandUrls);
-      console.log('🔍 [DEBUG] 代码版本: 2026-01-27-v2');
       
       // 验证是否有必需的波段
       const requiredBands = indices.includes('EVI') ? ['red', 'nir', 'blue'] : ['red', 'nir'];
@@ -248,8 +311,6 @@ function App() {
         };
         
         setProcessingTask(task);
-        
-        // 开始轮询任务状态
         startPolling(response.data.task_id);
       }
     } catch (error) {
@@ -272,6 +333,42 @@ function App() {
   // 处理下载
   const handleDownload = useCallback((image) => {
     console.log('下载影像:', image);
+  }, []);
+
+  // 处理选择变化
+  const handleSelectionChange = useCallback((newSelection) => {
+    setSelectedImages(newSelection);
+  }, []);
+
+  // 处理批量下载到S3
+  const handleDownloadToS3 = useCallback(async (images) => {
+    try {
+      message.loading({ content: '正在下载影像到 S3...', key: 'downloadToS3', duration: 0 });
+      
+      const response = await axios.post('/api/download/batch', {
+        images: images.map(img => ({
+          id: img.id,
+          datetime: img.datetime,
+          satellite: img.satellite,
+          assets: img.assets
+        }))
+      });
+      
+      message.success({ 
+        content: `成功提交 ${images.length} 个影像的下载任务`, 
+        key: 'downloadToS3',
+        duration: 3
+      });
+      
+      console.log('下载任务响应:', response.data);
+    } catch (error) {
+      console.error('下载到S3失败:', error);
+      message.error({ 
+        content: error.response?.data?.error || '下载到S3失败', 
+        key: 'downloadToS3',
+        duration: 3
+      });
+    }
   }, []);
 
   // 处理时间合成
@@ -448,7 +545,10 @@ function App() {
                   loading={queryLoading}
                   onImageSelect={handleImageSelect}
                   onDownload={handleDownload}
+                  onDownloadToS3={handleDownloadToS3}
                   selectedImageId={selectedImage?.id}
+                  selectedImages={selectedImages}
+                  onSelectionChange={handleSelectionChange}
                 />
               </div>
               
@@ -466,6 +566,7 @@ function App() {
                   onRefreshTask={handleRefreshTask}
                   aoi={aoi}
                   satelliteType={selectedImage?.satellite || 'sentinel-2'}
+                  selectedImages={selectedImages}
                 />
               </div>
             </div>

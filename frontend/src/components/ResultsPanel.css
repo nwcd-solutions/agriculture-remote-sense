@@ -49,8 +49,14 @@
 
 .result-content {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
+  align-items: flex-start;
+}
+
+.result-checkbox {
+  flex-shrink: 0;
+  padding-top: 4px;
 }
 
 .result-thumbnail {
@@ -103,4 +109,11 @@
   border-top: 1px solid #f0f0f0;
   display: flex;
   justify-content: center;
+}
+
+.results-batch-actions {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+  text-align: center;
 }
