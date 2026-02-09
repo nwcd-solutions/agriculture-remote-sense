@@ -72,7 +72,8 @@ export class FrontendStack extends cdk.Stack {
       
       // Repository configuration - connect to GitHub
       repository: config.frontend.repositoryUrl,
-      accessToken: config.frontend.githubToken,
+      // For public repositories, no access token is needed
+      ...(config.frontend.githubToken ? { accessToken: config.frontend.githubToken } : {}),
       
       // IAM service role
       iamServiceRole: amplifyRole.roleArn,
