@@ -23,6 +23,12 @@ def validate_date_range(start_date: str, end_date: str) -> Tuple[bool, Optional[
         start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
         end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
         
+        # Ensure timezone-aware
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=timezone.utc)
+        
         # Check if dates are in valid range
         if start > end:
             return False, "Start date must be before end date"
@@ -30,11 +36,6 @@ def validate_date_range(start_date: str, end_date: str) -> Tuple[bool, Optional[
         # Limit to 5 years to prevent excessive queries
         if (end - start).days > 1825:
             return False, "Date range too large (maximum 5 years)"
-        
-        # Check if dates are not in the future
-        now = datetime.now(tz=timezone.utc)
-        if start > now or end > now:
-            return False, "Dates cannot be in the future"
         
         return True, None
     except (ValueError, AttributeError) as e:
