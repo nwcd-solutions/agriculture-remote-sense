@@ -121,50 +121,6 @@ export class FrontendStack extends cdk.Stack {
         },
       ],
       
-      // Platform: WEB for React apps
-      platform: 'WEB',
-      
-      // Build settings
-      buildSpec: this.getBuildSpec(apiUrl, config.environment),
-      
-      // Environment variables
-      environmentVariables: [
-        {
-          name: 'REACT_APP_API_URL',
-          value: apiUrl,
-        },
-        {
-          name: 'REACT_APP_API_KEY',
-          value: apiKey,
-        },
-        {
-          name: 'REACT_APP_ENVIRONMENT',
-          value: config.environment,
-        },
-        ...(userPoolId ? [{
-          name: 'REACT_APP_USER_POOL_ID',
-          value: userPoolId,
-        }] : []),
-        ...(userPoolClientId ? [{
-          name: 'REACT_APP_USER_POOL_CLIENT_ID',
-          value: userPoolClientId,
-        }] : []),
-        ...(identityPoolId ? [{
-          name: 'REACT_APP_IDENTITY_POOL_ID',
-          value: identityPoolId,
-        }] : []),
-        {
-          name: '_LIVE_UPDATES',
-          value: JSON.stringify([
-            {
-              pkg: 'node',
-              type: 'nvm',
-              version: '18',
-            },
-          ]),
-        },
-      ],
-      
       // Custom rules for SPA routing
       customRules: [
         {
