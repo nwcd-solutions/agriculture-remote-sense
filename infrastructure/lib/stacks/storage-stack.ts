@@ -17,7 +17,7 @@ export class StorageStack extends cdk.Stack {
 
     // Create S3 bucket for processing results
     this.resultsBucket = new s3.Bucket(this, 'ResultsBucket', {
-      bucketName: `satellite-gis-results-${config.environment}-${config.account}`,
+      bucketName: `satellite-gis-results-${config.environment}-${config.account}-${config.region}`,
       versioned: true, // Enable versioning for data protection
       encryption: s3.BucketEncryption.S3_MANAGED, // Server-side encryption
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
