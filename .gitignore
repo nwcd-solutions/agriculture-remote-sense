@@ -29,6 +29,7 @@ infrastructure/cdk.out/
 # Deployment scripts and docs with sensitive info
 deploy-*.sh
 *-env-vars.json
+ec2-connection.md
 DEPLOYMENT_SUMMARY.md
 COGNITO_SETUP.md
 FRONTEND_DEPLOYMENT_STEPS.md
