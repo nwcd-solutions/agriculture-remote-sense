@@ -212,8 +212,47 @@ def download_image_to_s3(s3_client, bucket: str, image: Dict[str, Any]) -> Dict[
             s3_key = f"{base_path}/{asset_key}{file_ext}"
             
             # Copy from source to destination
-            # If source is s3://, use copy_object
-            # If source is https://, we need to download and upload
+            # Convert HTTPS S3 URLs to s3:// format
+            if asset_href.startswith('https://') and '.s3.' in asset_href and '.amazonaws.com/' in asset_href:
+                # Parse HTTPS S3 URL: https://bucket.s3.region.amazonaws.com/key
+                # or https://bucket.s3.amazonaws.com/key
+                try:
+                    # Extract bucket and key from HTTPS URL
+                    parts = asset_href.replace('https://', '').split('/', 1)
+                    if len(parts) == 2:
+                        host = parts[0]
+                        key = parts[1]
+                        
+                        # Extract bucket name from host
+                        # Format: bucket.s3.region.amazonaws.com or bucket.s3.amazonaws.com
+                        bucket_parts = host.split('.s3.')
+                        if len(bucket_parts) == 2:
+                            source_bucket = bucket_parts[0]
+                            source_key = key
+                            
+                            # Copy object from source S3 to destination S3
+                            copy_source = {'Bucket': source_bucket, 'Key': source_key}
+                            s3_client.copy_object(
+                                CopySource=copy_source,
+                                Bucket=bucket,
+                                Key=s3_key,
+                                MetadataDirective='COPY'
+                            )
+                            
+                            downloaded_assets.append({
+                                'asset_key': asset_key,
+                                's3_key': s3_key,
+                                'source': asset_href,
+                                'method': 'copy_https'
+                            })
+                            
+                            logger.info(f"Copied {asset_key} from {asset_href} to s3://{bucket}/{s3_key}")
+                            continue
+                except Exception as e:
+                    logger.error(f"Failed to copy HTTPS S3 asset {asset_key}: {e}")
+                    continue
+                    
+            # Handle s3:// URLs
             if asset_href.startswith('s3://'):
                 # Parse S3 URL
                 source_bucket, source_key = parse_s3_url(asset_href)
