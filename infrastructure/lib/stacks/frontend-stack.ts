@@ -65,23 +65,14 @@ export class FrontendStack extends cdk.Stack {
       ],
     });
 
-    // Validate GitHub token is provided
-    if (!config.frontend.githubToken) {
-      throw new Error(
-        'GitHub token is required for Amplify to connect to the repository. ' +
-        'Please set GITHUB_TOKEN environment variable or configure it in the config file. ' +
-        'See infrastructure/GITHUB_TOKEN_SETUP.md for instructions.'
-      );
-    }
-
-    // Create Amplify App
+    // Create Amplify App without repository connection
+    // Repository will be connected manually via AWS Console using OAuth
     this.amplifyApp = new amplify.CfnApp(this, 'AmplifyApp', {
       name: `satellite-gis-${config.environment}`,
-      description: `Satellite GIS Platform Frontend (${config.environment})`,
+      description: `Satellite GIS Platform Frontend (${config.environment}) - Connect repository via AWS Console`,
       
-      // Repository configuration - connect to GitHub
-      repository: config.frontend.repositoryUrl,
-      accessToken: config.frontend.githubToken,
+      // No repository configuration - will be connected manually via Console
+      // This allows using OAuth instead of Personal Access Token
       
       // IAM service role
       iamServiceRole: amplifyRole.roleArn,
@@ -157,55 +148,16 @@ customHeaders:
       `,
     });
 
-    // Create branch (main/master or environment-specific)
-    const branchName = config.frontend.branchName || config.environment;
-    this.amplifyBranch = new amplify.CfnBranch(this, 'AmplifyBranch', {
-      appId: this.amplifyApp.attrAppId,
-      branchName: branchName,
-      description: `${config.environment} environment branch`,
-      enableAutoBuild: true,
-      enablePullRequestPreview: config.environment !== 'prod',
-      stage: config.environment === 'prod' ? 'PRODUCTION' : 'DEVELOPMENT',
-      
-      // Environment variables specific to this branch
-      environmentVariables: [
-        {
-          name: 'REACT_APP_API_URL',
-          value: apiUrl,
-        },
-        {
-          name: 'REACT_APP_API_KEY',
-          value: apiKey,
-        },
-      ],
-    });
-
-    // Set the website URL
-    this.websiteUrl = `https://${branchName}.${this.amplifyApp.attrDefaultDomain}`;
-
-    // If custom domain is configured
-    if (config.frontend.domainName) {
-      const domain = new amplify.CfnDomain(this, 'AmplifyDomain', {
-        appId: this.amplifyApp.attrAppId,
-        domainName: config.frontend.domainName,
-        subDomainSettings: [
-          {
-            branchName: branchName,
-            prefix: config.environment === 'prod' ? '' : config.environment,
-          },
-        ],
-        enableAutoSubDomain: false,
-      });
-
-      this.websiteUrl = config.environment === 'prod'
-        ? `https://${config.frontend.domainName}`
-        : `https://${config.environment}.${config.frontend.domainName}`;
-    }
+    // Note: Branch will be created after connecting repository via AWS Console
+    // The following outputs will help with manual setup
+    
+    // Set the website URL (will be available after connecting repository)
+    this.websiteUrl = `https://${this.amplifyApp.attrDefaultDomain}`;
 
     // Outputs
     new cdk.CfnOutput(this, 'AmplifyAppId', {
       value: this.amplifyApp.attrAppId,
-      description: 'Amplify App ID',
+      description: 'Amplify App ID - Use this to connect repository in AWS Console',
       exportName: `SatelliteGis-AmplifyAppId-${config.environment}`,
     });
 
@@ -215,35 +167,37 @@ customHeaders:
       exportName: `SatelliteGis-AmplifyAppName-${config.environment}`,
     });
 
-    new cdk.CfnOutput(this, 'AmplifyDefaultDomain', {
-      value: this.amplifyApp.attrDefaultDomain,
-      description: 'Amplify default domain',
-      exportName: `SatelliteGis-AmplifyDomain-${config.environment}`,
+    new cdk.CfnOutput(this, 'AmplifyConsoleUrl', {
+      value: `https://console.aws.amazon.com/amplify/home?region=${this.region}#/${this.amplifyApp.attrAppId}`,
+      description: 'AWS Amplify Console URL - Click to connect repository',
     });
 
-    new cdk.CfnOutput(this, 'WebsiteUrl', {
-      value: this.websiteUrl,
-      description: 'Frontend website URL',
-      exportName: `SatelliteGis-WebsiteUrl-${config.environment}`,
+    new cdk.CfnOutput(this, 'RepositoryUrl', {
+      value: config.frontend.repositoryUrl || 'https://github.com/nwcd-solutions/agriculture-remote-sense',
+      description: 'GitHub Repository URL to connect',
     });
 
-    new cdk.CfnOutput(this, 'FrontendConfig', {
+    new cdk.CfnOutput(this, 'BranchName', {
+      value: config.frontend.branchName || 'main',
+      description: 'Git branch to deploy',
+    });
+
+    new cdk.CfnOutput(this, 'SetupInstructions', {
+      value: 'After deployment, go to Amplify Console and click "Connect branch" to link your GitHub repository using OAuth',
+      description: 'Next Steps',
+    });
+
+    new cdk.CfnOutput(this, 'EnvironmentVariables', {
       value: JSON.stringify({
-        apiUrl: apiUrl,
-        environment: config.environment,
-      }),
-      description: 'Frontend configuration JSON',
-      exportName: `SatelliteGis-FrontendConfig-${config.environment}`,
+        REACT_APP_API_URL: apiUrl,
+        REACT_APP_API_KEY: '<will-be-set-in-console>',
+        REACT_APP_ENVIRONMENT: config.environment,
+        REACT_APP_USER_POOL_ID: userPoolId || '',
+        REACT_APP_USER_POOL_CLIENT_ID: userPoolClientId || '',
+        REACT_APP_IDENTITY_POOL_ID: identityPoolId || '',
+      }, null, 2),
+      description: 'Environment variables to configure in Amplify Console',
     });
-
-    // Output custom domain (if configured)
-    if (config.frontend.domainName) {
-      new cdk.CfnOutput(this, 'CustomDomain', {
-        value: config.frontend.domainName,
-        description: 'Custom domain name',
-        exportName: `SatelliteGis-CustomDomain-${config.environment}`,
-      });
-    }
 
     // Add tags
     cdk.Tags.of(this).add('Stack', 'Frontend');

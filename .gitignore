@@ -26,16 +26,11 @@ infrastructure/cdk.context.json
 infrastructure/all-stacks-outputs.json
 infrastructure/cdk.out/
 
-# Deployment scripts and docs with sensitive info
+# Documentation - ignore all .md files except README.md (in any directory)
+**/*.md
+!README.md
+!**/README.md
+
+# Deployment scripts
 deploy-*.sh
 *-env-vars.json
-ec2-connection.md
-DEPLOYMENT_SUMMARY.md
-COGNITO_SETUP.md
-FRONTEND_DEPLOYMENT_STEPS.md
-infrastructure/STACK_OUTPUTS_REFERENCE.md
-
-# Frontend deployment files
-frontend/deploy.zip
-frontend/AMPLIFY_*.md
-frontend/deploy-to-amplify.sh

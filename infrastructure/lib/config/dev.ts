@@ -57,6 +57,8 @@ export const devConfig: EnvironmentConfig = {
   },
   
   // Frontend Configuration
+  // Note: Frontend stack is optional and requires manual Amplify setup via AWS Console
+  // Or you can deploy frontend manually to S3 + CloudFront
   frontend: {
     domainName: undefined, // Optional custom domain
     certificateArn: undefined, // Optional ACM certificate ARN
@@ -64,7 +66,7 @@ export const devConfig: EnvironmentConfig = {
     cloudFrontPriceClass: 'PriceClass_100', // US, Canada, Europe
     branchName: 'main', // Git branch name for Amplify
     repositoryUrl: 'https://github.com/nwcd-solutions/agriculture-remote-sense', // GitHub repo URL (public)
-    githubToken: process.env.GITHUB_TOKEN, // GitHub Personal Access Token (required even for public repos)
+    githubToken: undefined, // Set via environment variable if using automated Amplify deployment
   },
   
   // Tags
