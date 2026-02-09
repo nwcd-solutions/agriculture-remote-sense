@@ -63,7 +63,7 @@ export const devConfig: EnvironmentConfig = {
     enableCloudFront: true,
     cloudFrontPriceClass: 'PriceClass_100', // US, Canada, Europe
     branchName: 'main', // Git branch name for Amplify
-    repositoryUrl: 'https://github.com/nwcd-solutions/remote-sensing', // GitHub repo URL
+    repositoryUrl: 'https://github.com/nwcd-solutions/agriculture-remote-sense', // GitHub repo URL (public)
     githubToken: process.env.GITHUB_TOKEN, // GitHub access token (set via environment variable)
   },
   
