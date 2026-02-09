@@ -211,8 +211,7 @@ customHeaders:
    * Generate Amplify build spec for React app
    */
   private getBuildSpec(apiUrl: string, environment: string): string {
-    return `
-version: 1
+    return `version: 1
 frontend:
   phases:
     preBuild:
