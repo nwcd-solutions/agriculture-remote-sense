@@ -94,7 +94,9 @@ function App() {
       }
     } catch (error) {
       console.error('查询失败:', error);
-      message.error(error.response?.data?.message || '查询失败，请稍后重试');
+      console.error('错误详情:', error.response?.data);
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || error.message || '查询失败，请稍后重试';
+      message.error(errorMsg);
       setQueryResults([]);
     } finally {
       setQueryLoading(false);

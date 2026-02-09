@@ -3,7 +3,7 @@ Input validation utilities
 """
 import logging
 from typing import List, Tuple, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def validate_date_range(start_date: str, end_date: str) -> Tuple[bool, Optional[
             return False, "Date range too large (maximum 5 years)"
         
         # Check if dates are not in the future
-        now = datetime.now(datetime.timezone.utc)
+        now = datetime.now(tz=timezone.utc)
         if start > now or end > now:
             return False, "Dates cannot be in the future"
         
