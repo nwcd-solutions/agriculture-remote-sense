@@ -18,13 +18,16 @@ export class StorageStack extends cdk.Stack {
     // Create S3 bucket for processing results
     this.resultsBucket = new s3.Bucket(this, 'ResultsBucket', {
       bucketName: `satellite-gis-results-${config.environment}-${config.account}`,
-      versioned: false,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      versioned: true, // Enable versioning for data protection
+      encryption: s3.BucketEncryption.S3_MANAGED, // Server-side encryption
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       removalPolicy: config.environment === 'prod'
         ? cdk.RemovalPolicy.RETAIN
         : cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: config.environment !== 'prod',
+      
+      // Enable access logging for security auditing
+      serverAccessLogsPrefix: 'access-logs/',
       
       // Lifecycle rules for automatic cleanup
       lifecycleRules: [
@@ -59,6 +62,11 @@ export class StorageStack extends cdk.Stack {
           id: 'AbortIncompleteMultipartUpload',
           enabled: true,
           abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+        },
+        {
+          id: 'DeleteOldVersions',
+          enabled: true,
+          noncurrentVersionExpiration: cdk.Duration.days(30), // Delete old versions after 30 days
         },
       ],
 

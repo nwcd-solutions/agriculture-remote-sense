@@ -20,3 +20,22 @@ temp/
 
 # Logs
 *.log
+
+# CDK
+infrastructure/cdk.context.json
+infrastructure/all-stacks-outputs.json
+infrastructure/cdk.out/
+
+# Deployment scripts and docs with sensitive info
+deploy-*.sh
+*-env-vars.json
+DEPLOYMENT_SUMMARY.md
+COGNITO_SETUP.md
+FRONTEND_DEPLOYMENT_STEPS.md
+GITHUB_TOKEN_SETUP.md
+infrastructure/STACK_OUTPUTS_REFERENCE.md
+
+# Frontend deployment files
+frontend/deploy.zip
+frontend/AMPLIFY_*.md
+frontend/deploy-to-amplify.sh

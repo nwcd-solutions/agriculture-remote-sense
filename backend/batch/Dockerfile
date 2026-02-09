@@ -30,7 +30,7 @@ RUN grep -v "^GDAL" requirements.txt > requirements-no-gdal.txt && \
 
 # Copy application code
 COPY app/ ./app/
-COPY batch_processor.py .
+COPY batch/batch_processor.py .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

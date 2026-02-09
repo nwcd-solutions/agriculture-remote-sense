@@ -42,6 +42,46 @@ logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 
+# Security: Log sanitization
+def sanitize_log_data(data):
+    """Remove sensitive information from log data"""
+    if not isinstance(data, dict):
+        return data
+    
+    sensitive_keys = ['password', 'token', 'key', 'secret', 'api_key', 'access_key', 'credentials']
+    sanitized = {}
+    
+    for key, value in data.items():
+        if any(sensitive in key.lower() for sensitive in sensitive_keys):
+            sanitized[key] = '***REDACTED***'
+        elif isinstance(value, dict):
+            sanitized[key] = sanitize_log_data(value)
+        else:
+            sanitized[key] = value
+    
+    return sanitized
+
+
+def safe_error_response(error: Exception, status_code: int = 500):
+    """Return safe error response based on environment"""
+    environment = os.getenv('ENVIRONMENT', 'dev')
+    
+    if environment == 'prod':
+        # In production, return generic error
+        error_msg = 'Internal server error'
+        logger.error(f"Error occurred: {str(error)}", exc_info=True)
+    else:
+        # In development, return detailed error
+        error_msg = str(error)
+        logger.error(f"Error occurred: {error_msg}", exc_info=True)
+    
+    return {
+        'statusCode': status_code,
+        'headers': cors_headers(),
+        'body': json.dumps({'error': error_msg})
+    }
+
+
 # ============================================================================
 # Inlined Models (minimal Pydantic-free versions)
 # ============================================================================
@@ -198,7 +238,8 @@ class TaskRepository:
         if not task.task_id:
             task.task_id = f"task_{uuid.uuid4().hex[:12]}"
         
-        ttl = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+        # Security: Reduced TTL from 30 days to 14 days for better data hygiene
+        ttl = int((datetime.now(timezone.utc) + timedelta(days=14)).timestamp())
         
         item = self._task_to_dynamodb(task)
         item["ttl"] = ttl
@@ -465,11 +506,16 @@ def get_s3_service():
 
 def cors_headers():
     """Return CORS headers"""
+    # Read allowed origins from environment variable
+    # In production, this should be set to your frontend domain
+    allowed_origins = os.getenv('CORS_ORIGINS', '*')
+    
     return {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': allowed_origins,
         'Access-Control-Allow-Headers': 'Content-Type,X-Api-Key,Authorization',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+        'Access-Control-Allow-Credentials': 'true' if allowed_origins != '*' else 'false'
     }
 
 
@@ -552,7 +598,8 @@ def submit_indices_job(event):
         # Convert floats to Decimal for DynamoDB compatibility
         body = convert_floats_to_decimal(body)
         
-        logger.info(f"Submitting job with parameters: {json.dumps(body, default=str)}")
+        # Security: Sanitize log data
+        logger.info(f"Submitting job with parameters: {json.dumps(sanitize_log_data(body), default=str)}")
         
         # Create task
         task = ProcessingTask(
@@ -608,11 +655,7 @@ def submit_indices_job(event):
         }
     except Exception as e:
         logger.error(f"Submit job error: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': cors_headers(),
-            'body': json.dumps({'error': str(e)})
-        }
+        return safe_error_response(e)
 
 
 def submit_composite_job(event):
@@ -716,11 +759,7 @@ def submit_composite_job(event):
         }
     except Exception as e:
         logger.error(f"Submit composite job error: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': cors_headers(),
-            'body': json.dumps({'error': str(e)})
-        }
+        return safe_error_response(e)
 
 
 def get_task_status(event):
@@ -769,7 +808,7 @@ def get_task_status(event):
                 for index in task.parameters.get('indices', []):
                     s3_key = f"tasks/{task_id}/{index}.tif"
                     if s3_service.file_exists(s3_key):
-                        presigned_url = s3_service.generate_presigned_url(s3_key, expiration=3600)
+                        presigned_url = s3_service.generate_presigned_url(s3_key, expiration=14400)  # 4 hours
                         file_size = s3_service.get_file_size(s3_key)
                         output_files.append({
                             'name': f"{index}.tif",
@@ -821,11 +860,7 @@ def get_task_status(event):
         }
     except Exception as e:
         logger.error(f"Get task status error: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': cors_headers(),
-            'body': json.dumps({'error': str(e)})
-        }
+        return safe_error_response(e)
 
 
 def cancel_task(event):
@@ -866,11 +901,7 @@ def cancel_task(event):
         }
     except Exception as e:
         logger.error(f"Cancel task error: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': cors_headers(),
-            'body': json.dumps({'error': str(e)})
-        }
+        return safe_error_response(e)
 
 
 def list_tasks(event):
@@ -936,9 +967,5 @@ def list_tasks(event):
         }
         
     except Exception as e:
-        logger.error(f"List tasks error: {str(e)}", exc_info=True)
-        return {
-            'statusCode': 500,
-            'headers': cors_headers(),
-            'body': json.dumps({'error': str(e)})
-        }
+        logger.error(f'List tasks error: {str(e)}', exc_info=True)
+        return safe_error_response(e)

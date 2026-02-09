@@ -9,6 +9,12 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
+# Import shared utilities
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from common.security import get_cors_headers, safe_error_response
+from common.validators import validate_date_range, validate_bbox, validate_limit
+
 logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
@@ -40,13 +46,13 @@ def handler(event, context):
         if http_method == 'OPTIONS':
             return {
                 'statusCode': 200,
-                'headers': cors_headers(),
+                'headers': get_cors_headers(),
                 'body': ''
             }
         
         return {
             'statusCode': 404,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': 'Not found'})
         }
             
@@ -54,26 +60,16 @@ def handler(event, context):
         logger.error(f'Handler error: {str(e)}', exc_info=True)
         return {
             'statusCode': 500,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': str(e)})
         }
-
-
-def cors_headers():
-    """Return CORS headers"""
-    return {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type,X-Api-Key,Authorization',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
-    }
 
 
 def health_check():
     """Health check endpoint"""
     return {
         'statusCode': 200,
-        'headers': cors_headers(),
+        'headers': get_cors_headers(),
         'body': json.dumps({
             'status': 'healthy',
             'service': 'satellite-gis-query-lambda',
@@ -125,15 +121,42 @@ def query_satellite_data(event):
     if not bbox or len(bbox) != 4:
         return {
             'statusCode': 400,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': 'Invalid bbox or aoi parameter. Expected bbox [west, south, east, north] or GeoJSON aoi'})
         }
     
     if not start_date or not end_date:
         return {
             'statusCode': 400,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': 'start_date/end_date or date_range is required'})
+        }
+    
+    # Security: Validate bbox
+    is_valid, error_msg = validate_bbox(bbox)
+    if not is_valid:
+        return {
+            'statusCode': 400,
+            'headers': get_cors_headers(),
+            'body': json.dumps({'error': error_msg})
+        }
+    
+    # Security: Validate date range
+    is_valid, error_msg = validate_date_range(start_date, end_date)
+    if not is_valid:
+        return {
+            'statusCode': 400,
+            'headers': get_cors_headers(),
+            'body': json.dumps({'error': error_msg})
+        }
+    
+    # Security: Validate limit
+    is_valid, error_msg = validate_limit(limit)
+    if not is_valid:
+        return {
+            'statusCode': 400,
+            'headers': get_cors_headers(),
+            'body': json.dumps({'error': error_msg})
         }
     
     # Determine collection based on satellite type
@@ -142,7 +165,7 @@ def query_satellite_data(event):
     if not collection:
         return {
             'statusCode': 400,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': f'Unsupported satellite type: {satellite}'})
         }
     
@@ -191,7 +214,7 @@ def query_satellite_data(event):
         
         return {
             'statusCode': 200,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({
                 'results': results,
                 'count': len(results),
@@ -211,14 +234,14 @@ def query_satellite_data(event):
         logger.error(f"STAC API error: {str(e)}")
         return {
             'statusCode': 502,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': f'Failed to query STAC API: {str(e)}'})
         }
     except Exception as e:
         logger.error(f"Query error: {str(e)}", exc_info=True)
         return {
             'statusCode': 500,
-            'headers': cors_headers(),
+            'headers': get_cors_headers(),
             'body': json.dumps({'error': str(e)})
         }
 
@@ -291,8 +314,8 @@ def get_collection_config(satellite: str, product_level: Optional[str], cloud_co
         product = (product_level or 'MCD43A4').upper()
         # MODIS 产品映射
         modis_collections = {
-            "MOD09A1": "modis-mod09a1",     # Terra 反射率
-            "MYD09A1": "modis-myd09a1",     # Aqua 反射率
+            "MOD09A1": "modis-mod09a1",     # Terra 反射�?
+            "MYD09A1": "modis-myd09a1",     # Aqua 反射�?
             "MCD43A4": "modis-mcd43a4",     # Combined BRDF
             "MOD13A1": "modis-mod13a1",     # Terra 植被指数
             "MYD13A1": "modis-myd13a1",     # Aqua 植被指数
@@ -300,7 +323,7 @@ def get_collection_config(satellite: str, product_level: Optional[str], cloud_co
             "MYD11A1": "modis-myd11a1",     # Aqua 地表温度
         }
         collection = modis_collections.get(product, f"modis-{product.lower()}")
-        # MODIS 没有标准的 eo:cloud_cover 字段
+        # MODIS 没有标准�?eo:cloud_cover 字段
         
     else:
         return None, None

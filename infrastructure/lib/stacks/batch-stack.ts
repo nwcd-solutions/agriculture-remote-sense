@@ -29,7 +29,7 @@ export class BatchStack extends cdk.Stack {
 
     // Build container image from source
     const containerImage = ecs.ContainerImage.fromAsset('../backend', {
-      file: 'Dockerfile.batch',
+      file: 'batch/Dockerfile',
       platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
     });
 

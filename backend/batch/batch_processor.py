@@ -386,10 +386,10 @@ class BatchProcessor:
                     }
                 )
                 
-                # Generate presigned download URL
+                # Generate presigned download URL (reduced from 24h to 4h for security)
                 download_url = self.s3_service.generate_presigned_url(
                     s3_key,
-                    expiration=86400  # 24 hours
+                    expiration=14400  # 4 hours
                 )
                 
                 # Get file size
@@ -533,7 +533,7 @@ class BatchProcessor:
                 'period': period_label,
                 'type': 'composite'
             })
-            download_url = self.s3_service.generate_presigned_url(s3_key, expiration=86400)
+            download_url = self.s3_service.generate_presigned_url(s3_key, expiration=14400)  # 4 hours
             file_size_mb = round(os.path.getsize(temp_path) / (1024 * 1024), 2)
 
             output_files.append({

@@ -14,6 +14,11 @@ logger = logging.getLogger()
 logger.setLevel(os.getenv('LOG_LEVEL', 'INFO'))
 
 
+# Security: Constants
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_AOI_AREA_KM2 = 100000  # 100,000 km²
+
+
 def handler(event, context):
     """
     Handle AOI requests
@@ -66,11 +71,16 @@ def handler(event, context):
 
 def cors_headers():
     """Return CORS headers"""
+    # Read allowed origins from environment variable
+    # In production, this should be set to your frontend domain
+    allowed_origins = os.getenv('CORS_ORIGINS', '*')
+    
     return {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': allowed_origins,
         'Access-Control-Allow-Headers': 'Content-Type,X-Api-Key,Authorization',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS'
+        'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+        'Access-Control-Allow-Credentials': 'true' if allowed_origins != '*' else 'false'
     }
 
 
@@ -190,6 +200,17 @@ def upload_aoi(event):
                 'body': json.dumps({'error': 'No file content provided'})
             }
         
+        # Security: Check file size
+        if len(file_content) > MAX_FILE_SIZE:
+            return {
+                'statusCode': 400,
+                'headers': cors_headers(),
+                'body': json.dumps({
+                    'error': 'file_too_large',
+                    'message': f'File size exceeds maximum allowed size of {MAX_FILE_SIZE / (1024 * 1024):.0f}MB'
+                })
+            }
+        
         # Parse GeoJSON
         try:
             geojson_data = json.loads(file_content.decode('utf-8'))
@@ -244,6 +265,17 @@ def process_geojson(geojson_data: Dict[str, Any]):
     # Calculate area and bounds
     area_km2 = calculate_area_km2(aoi)
     bounds = calculate_bounds(aoi)
+    
+    # Security: Validate AOI area is not too large
+    if area_km2 > MAX_AOI_AREA_KM2:
+        return {
+            'statusCode': 400,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'error': 'aoi_too_large',
+                'message': f'AOI area ({area_km2:.2f} km²) exceeds maximum allowed area of {MAX_AOI_AREA_KM2:,} km²'
+            })
+        }
     
     return {
         'statusCode': 200,

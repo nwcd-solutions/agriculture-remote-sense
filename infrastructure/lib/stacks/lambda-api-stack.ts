@@ -47,7 +47,7 @@ export class LambdaApiStack extends cdk.Stack {
     const queryFunction = new lambda.Function(this, 'QueryFunction', {
       functionName: `satellite-gis-query-${config.environment}`,
       runtime: lambda.Runtime.PYTHON_3_11,
-      handler: 'lambda_query.handler',
+      handler: 'lambda_handlers.query_handler.handler',
       code: lambda.Code.fromAsset('../backend'),
       // No layers needed - uses only Python built-in libraries
       memorySize: 512,
@@ -55,6 +55,9 @@ export class LambdaApiStack extends cdk.Stack {
       environment: {
         ENVIRONMENT: config.environment,
         LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
+        CORS_ORIGINS: config.environment === 'prod' 
+          ? process.env.CORS_ORIGINS || 'https://yourdomain.com'
+          : '*',
       },
     });
 
@@ -62,7 +65,7 @@ export class LambdaApiStack extends cdk.Stack {
     const processFunction = new lambda.Function(this, 'ProcessFunction', {
       functionName: `satellite-gis-process-${config.environment}`,
       runtime: lambda.Runtime.PYTHON_3_11,
-      handler: 'lambda_process.handler',
+      handler: 'lambda_handlers.process_handler.handler',
       code: lambda.Code.fromAsset('../backend'),
       layers: [dependenciesLayer], // Use layer with stable boto3 version
       memorySize: 512,
@@ -74,6 +77,9 @@ export class LambdaApiStack extends cdk.Stack {
         BATCH_JOB_QUEUE: batchJobQueue.jobQueueName,
         BATCH_JOB_DEFINITION: batchJobDefinitionName,
         LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
+        CORS_ORIGINS: config.environment === 'prod' 
+          ? process.env.CORS_ORIGINS || 'https://yourdomain.com'
+          : '*',
       },
     });
 
@@ -81,7 +87,7 @@ export class LambdaApiStack extends cdk.Stack {
     const aoiFunction = new lambda.Function(this, 'AoiFunction', {
       functionName: `satellite-gis-aoi-${config.environment}`,
       runtime: lambda.Runtime.PYTHON_3_11,
-      handler: 'lambda_aoi.handler',
+      handler: 'lambda_handlers.aoi_handler.handler',
       code: lambda.Code.fromAsset('../backend'),
       // No layers needed - uses only Python built-in libraries
       memorySize: 256,
@@ -89,6 +95,9 @@ export class LambdaApiStack extends cdk.Stack {
       environment: {
         ENVIRONMENT: config.environment,
         LOG_LEVEL: config.environment === 'prod' ? 'INFO' : 'DEBUG',
+        CORS_ORIGINS: config.environment === 'prod' 
+          ? process.env.CORS_ORIGINS || 'https://yourdomain.com'
+          : '*',
       },
     });
 
